@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mapa de Corrupción en Chile</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3a;
+    --accent: #ff3c3c;
+    --accent2: #ffaa00;
+    --accent3: #00d4aa;
+    --text: #e8e8f0;
+    --muted: #6b6b8a;
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'Space Mono', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: var(--font-mono); overflow: hidden; height: 100vh; }
+
+  #map { width: 100vw; height: 100vh; }
+
+  /* HEADER */
+  #header {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+    background: linear-gradient(180deg, rgba(10,10,15,0.98) 0%, rgba(10,10,15,0) 100%);
+    padding: 16px 24px 40px;
+    pointer-events: none;
+  }
+  #header h1 {
+    font-family: var(--font-display);
+    font-size: clamp(18px, 3vw, 28px);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1;
+  }
+  #header h1 span { color: var(--accent); }
+  #header p {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 4px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+
+  /* SIDEBAR */
+  #sidebar {
+    position: fixed; top: 0; right: 0; bottom: 0; z-index: 1001;
+    width: 300px;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    display: flex; flex-direction: column;
+    transition: transform 0.3s ease;
+    overflow: hidden;
+  }
+  #sidebar.collapsed { transform: translateX(270px); }
+  #sidebar-toggle {
+    position: absolute; left: -36px; top: 50%;
+    transform: translateY(-50%);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-right: none;
+    color: var(--text);
+    padding: 12px 8px;
+    cursor: pointer;
+    font-size: 14px;
+    border-radius: 6px 0 0 6px;
+    writing-mode: vertical-lr;
+    letter-spacing: 0.1em;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    text-transform: uppercase;
+  }
+  #sidebar-content { padding: 70px 16px 16px; overflow-y: auto; flex: 1; }
+  .sidebar-section { margin-bottom: 20px; }
+  .sidebar-label {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.15em;
+    color: var(--muted); margin-bottom: 8px; display: block;
+  }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-btn {
+    background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 6px 10px; cursor: pointer;
+    font-family: var(--font-mono); font-size: 10px;
+    text-align: left; border-radius: 4px; transition: all 0.2s;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+  .filter-btn .count {
+    background: rgba(255,255,255,0.15); padding: 2px 6px;
+    border-radius: 10px; font-size: 9px;
+  }
+
+  /* STATS */
+  #stats-bar {
+    position: fixed; bottom: 0; left: 0; z-index: 1001;
+    background: rgba(10,10,15,0.96);
+    border-top: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    padding: 10px 20px;
+    display: flex; gap: 24px;
+    font-size: 10px;
+  }
+  .stat { display: flex; flex-direction: column; }
+  .stat-val {
+    font-family: var(--font-display);
+    font-size: 18px; font-weight: 800; color: var(--accent);
+    line-height: 1;
+  }
+  .stat-val.green { color: var(--accent3); }
+  .stat-val.yellow { color: var(--accent2); }
+  .stat-lbl { color: var(--muted); font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; }
+
+  /* LEGEND */
+  #legend {
+    position: fixed; bottom: 80px; left: 20px; z-index: 1001;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 12px 16px;
+    border-radius: 8px;
+    font-size: 9px;
+    max-width: 200px;
+  }
+  #legend h4 { font-family: var(--font-display); font-size: 10px; margin-bottom: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; }
+  .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .legend-circle {
+    border-radius: 50%; border: 2px solid rgba(255,255,255,0.3);
+    flex-shrink: 0;
+  }
+  .leg-sm { width: 10px; height: 10px; background: rgba(255,60,60,0.5); }
+  .leg-md { width: 16px; height: 16px; background: rgba(255,60,60,0.6); }
+  .leg-lg { width: 24px; height: 24px; background: rgba(255,60,60,0.7); }
+  .leg-xl { width: 34px; height: 34px; background: rgba(255,60,60,0.8); }
+  .legend-color-row { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+  .color-chip { display: flex; align-items: center; gap: 4px; }
+  .color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+  /* POPUP */
+  .leaflet-popup-content-wrapper {
+    background: var(--surface) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: 8px !important;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.8) !important;
+    padding: 0 !important;
+  }
+  .leaflet-popup-tip { background: var(--surface) !important; }
+  .leaflet-popup-content { margin: 0 !important; width: 280px !important; }
+  .popup-inner { padding: 16px; }
+  .popup-year {
+    font-size: 9px; text-transform: uppercase; letter-spacing: 0.15em;
+    color: var(--muted); margin-bottom: 4px;
+  }
+  .popup-title {
+    font-family: var(--font-display); font-size: 15px; font-weight: 800;
+    color: var(--text); margin-bottom: 8px; line-height: 1.2;
+  }
+  .popup-amount {
+    font-family: var(--font-display); font-size: 22px; font-weight: 800;
+    color: var(--accent); margin-bottom: 10px;
+  }
+  .popup-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; }
+  .popup-tag {
+    background: var(--surface2); border: 1px solid var(--border);
+    padding: 2px 8px; border-radius: 10px; font-size: 9px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+  }
+  .popup-tag.sector { border-color: var(--accent2); color: var(--accent2); }
+  .popup-tag.partido { border-color: var(--accent3); color: var(--accent3); }
+  .popup-detail { font-size: 10px; color: var(--muted); line-height: 1.6; margin-bottom: 8px; }
+  .popup-status {
+    background: var(--surface2); padding: 6px 10px;
+    border-radius: 4px; font-size: 9px; border-left: 3px solid var(--accent);
+    margin-top: 6px;
+  }
+
+  /* YEAR SLIDER */
+  #year-filter { margin-bottom: 12px; }
+  input[type=range] {
+    width: 100%; accent-color: var(--accent);
+  }
+  .year-labels { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); }
+
+  /* SEARCH */
+  #search-input {
+    width: 100%; background: var(--surface2); border: 1px solid var(--border);
+    color: var(--text); padding: 8px 10px; font-family: var(--font-mono);
+    font-size: 10px; border-radius: 4px; outline: none;
+    transition: border-color 0.2s;
+  }
+  #search-input:focus { border-color: var(--accent); }
+  #search-input::placeholder { color: var(--muted); }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--surface); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Info banner */
+  #info-banner {
+    position: fixed; top: 70px; left: 20px; z-index: 1001;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    padding: 8px 12px;
+    font-size: 9px; color: var(--muted);
+    border-radius: 4px;
+    max-width: 220px;
+    transition: opacity 0.3s;
+  }
+  #info-banner strong { color: var(--text); display: block; margin-bottom: 2px; font-size: 10px; }
+
+  @media (max-width: 600px) {
+    #sidebar { width: 260px; }
+    #sidebar.collapsed { transform: translateX(235px); }
+  }
+</style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<div id="header">
+  <h1>🇨🇱 Mapa de <span>Corrupción</span> en Chile</h1>
+  <p>128 casos documentados · 1989–2024 · Visualización interactiva</p>
+</div>
+
+<div id="info-banner">
+  <strong>💡 Cómo usar</strong>
+  Haz clic en cualquier círculo para ver los detalles del caso. Usa los filtros a la derecha.
+</div>
+
+<div id="sidebar" id="sidebar">
+  <button id="sidebar-toggle" onclick="toggleSidebar()">FILTROS ▶</button>
+  <div id="sidebar-content">
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">🔍 Búsqueda</span>
+      <input type="text" id="search-input" placeholder="Caso, responsable, comuna..." oninput="applyFilters()">
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">📅 Período</span>
+      <div id="year-filter">
+        <div style="display:flex;gap:6px;margin-bottom:4px">
+          <input type="range" id="year-min" min="1989" max="2024" value="1989" oninput="updateYearDisplay();applyFilters()">
+          <input type="range" id="year-max" min="1989" max="2024" value="2024" oninput="updateYearDisplay();applyFilters()">
+        </div>
+        <div class="year-labels">
+          <span id="year-min-label">1989</span>
+          <span id="year-max-label">2024</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">🏛️ Sector Político</span>
+      <div class="filter-group" id="sector-filters"></div>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">💰 Tipo de caso</span>
+      <div class="filter-group" id="tipo-filters">
+        <button class="filter-btn active" data-tipo="todos" onclick="selectTipo(this,'todos')">Todos los casos <span class="count" id="cnt-todos">0</span></button>
+        <button class="filter-btn" data-tipo="fundaciones" onclick="selectTipo(this,'fundaciones')">Caso Fundaciones <span class="count" id="cnt-fundaciones">0</span></button>
+        <button class="filter-btn" data-tipo="alcaldias" onclick="selectTipo(this,'alcaldias')">Alcaldías <span class="count" id="cnt-alcaldias">0</span></button>
+        <button class="filter-btn" data-tipo="ffaa" onclick="selectTipo(this,'ffaa')">FFAA / Policía <span class="count" id="cnt-ffaa">0</span></button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <span class="sidebar-label">⚖️ Estado judicial</span>
+      <div class="filter-group" id="estado-filters"></div>
+    </div>
+
+  </div>
+</div>
+
+<div id="legend">
+  <h4>Monto del caso</h4>
+  <div class="legend-row"><div class="legend-circle leg-sm"></div><span>Menos de $100M</span></div>
+  <div class="legend-row"><div class="legend-circle leg-md"></div><span>$100M – $1.000M</span></div>
+  <div class="legend-row"><div class="legend-circle leg-lg"></div><span>$1.000M – $10.000M</span></div>
+  <div class="legend-row"><div class="legend-circle leg-xl"></div><span>Más de $10.000M</span></div>
+  <div style="margin-top:10px; border-top:1px solid var(--border); padding-top:10px;">
+    <h4 style="margin-bottom:6px">Sector político</h4>
+    <div class="legend-color-row">
+      <div class="color-chip"><div class="color-dot" style="background:#3498db"></div><span style="font-size:9px">Izquierda</span></div>
+      <div class="color-chip"><div class="color-dot" style="background:#e74c3c"></div><span style="font-size:9px">Derecha</span></div>
+      <div class="color-chip"><div class="color-dot" style="background:#f39c12"></div><span style="font-size:9px">Centro</span></div>
+      <div class="color-chip"><div class="color-dot" style="background:#9b59b6"></div><span style="font-size:9px">Ninguno</span></div>
+    </div>
+  </div>
+</div>
+
+<div id="stats-bar">
+  <div class="stat">
+    <div class="stat-val" id="stat-casos">0</div>
+    <div class="stat-lbl">Casos visibles</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val yellow" id="stat-monto">$0</div>
+    <div class="stat-lbl">Monto total</div>
+  </div>
+  <div class="stat">
+    <div class="stat-val green" id="stat-comunas">0</div>
+    <div class="stat-lbl">Comunas</div>
+  </div>
+</div>
+
+<script>
+const COORDS = {
+  "Recoleta": [-33.408, -70.643],
+  "Santiago": [-33.455, -70.648],
+  "Ñuñoa": [-33.456, -70.601],
+  "Providencia": [-33.433, -70.616],
+  "Vitacura": [-33.387, -70.592],
+  "Las Condes": [-33.408, -70.535],
+  "La Florida": [-33.522, -70.594],
+  "Estación Central": [-33.458, -70.697],
+  "Lo Barnechea": [-33.352, -70.518],
+  "San Joaquín": [-33.492, -70.640],
+  "San Bernardo": [-33.593, -70.717],
+  "Melipilla": [-33.694, -71.213],
+  "Rinconada": [-32.843, -70.799],
+  "Mostazal": [-34.00, -70.70],
+  "La Pintana": [-33.584, -70.632],
+  "Lampa": [-33.291, -70.883],
+  "Puente Alto": [-33.611, -70.575],
+  "San Ramón": [-33.517, -70.633],
+  "Antofagasta": [-23.651, -70.398],
+  "Pozo Almonte": [-20.259, -69.787],
+  "Arica": [-18.478, -70.313],
+  "Valparaíso": [-33.047, -71.613],
+  "Viña del Mar": [-33.025, -71.552],
+  "Algarrobo": [-33.367, -71.667],
+  "Coquimbo": [-29.953, -71.339],
+  "Rancagua": [-34.171, -70.744],
+  "Talca": [-35.426, -71.655],
+  "Linares": [-35.846, -71.597],
+  "Sagrada Familia": [-34.967, -71.400],
+  "Tierra Amarilla": [-27.483, -70.267],
+  "Puerto Natales": [-51.730, -72.498],
+  "Guaitecas": [-43.900, -74.100],
+  "La Araucanía": [-38.736, -72.590],
+  "Los Lagos": [-41.469, -72.942],
+  "Maule": [-35.426, -71.655],
+  "Biobío": [-36.827, -73.050],
+  "Atacama": [-27.367, -70.332]
+};
+
+const casos = [
+  {id:1, caso:"Pinocheques", año:1989, monto:18400000000, responsable:"Augusto Pinochet", sector:"Derecha", partido:"NA", posicion:"NA", comuna:null, delitos:"Fraude tributario, uso de pasaportes falsos", estado:"Impunidad", conclusion:"impunidad"},
+  {id:2, caso:"Caso Ceresita", año:1993, monto:40000000, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"Privado", comuna:"Recoleta"},
+  {id:3, caso:"Caso MOP-Gate", año:2000, monto:1253000000, responsable:"NA", sector:"Izquierda", partido:"PPD, PS, PR", posicion:"NA", comuna:"Santiago"},
+  {id:4, caso:"Caso Coimas", año:2002, monto:35000000, responsable:"Patricio Tombolini", sector:"Izquierda", partido:"PR, DC", posicion:"NA", comuna:"Santiago", delitos:"Cohecho", conclusion:"presidio"},
+  {id:5, caso:"Caso Inverlink", año:2003, monto:3000000000, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"Privado", comuna:"Santiago", delitos:"Tráfico de información confidencial"},
+  {id:6, caso:"Caso Riggs", año:2004, monto:1550000000, responsable:"Augusto Pinochet", sector:"Derecha", partido:"NA", posicion:"Presidente", comuna:"Santiago"},
+  {id:7, caso:"Sebastián Piñera (LAN)", año:2006, monto:19840000000, responsable:"Sebastián Piñera", sector:"Derecha", partido:"RN", posicion:"Presidente", comuna:"Santiago", delitos:"Compra de acciones con información privilegiada", conclusion:"multa"},
+  {id:8, caso:"Caso ChileDeportes", año:2006, monto:946000000, responsable:"NA", sector:"Izquierda", partido:"PPD", posicion:"NA", comuna:"Santiago"},
+  {id:9, caso:"Caso Subvenciones", año:2006, monto:290000000, responsable:"Franka Grez", sector:"Ninguno", partido:"NA", posicion:"Ministro", comuna:"Santiago", delitos:"Malversación de fondos públicos"},
+  {id:10, caso:"Caso EFE", año:2008, monto:23671000, responsable:"Luis Ajenjo", sector:"Centro", partido:"DC", posicion:"NA", comuna:"Santiago", delitos:"Fraude al Fisco"},
+  {id:11, caso:"Claudia Nogueira", año:2009, monto:30000000, responsable:"Claudia Nogueira", sector:"Derecha", partido:"UDI", posicion:"Diputado", comuna:"Santiago"},
+  {id:12, caso:"Eduardo Gordon (Carabineros)", año:2011, monto:75479839, responsable:"Eduardo Gordon", sector:"Ninguno", partido:"NA", posicion:"Carabineros", comuna:"Santiago", delitos:"Malversación de caudales públicos", conclusion:"Condena"},
+  {id:13, caso:"Caso Corpesca", año:2012, monto:4670000000, responsable:"Pablo Longueira, Jaime Orpis, Fulvio Rossi", sector:"Derecha", partido:"UDI", posicion:"Senador", comuna:"Santiago", delitos:"Fraude al fisco, cohecho", conclusion:"cárcel"},
+  {id:14, caso:"Caso LarrainVial", año:2013, monto:1700000000, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"Privado", comuna:"Santiago", delitos:"Estafa"},
+  {id:15, caso:"Alcaldesa de Recoleta (Sol Letelier)", año:2013, monto:22917478, responsable:"Sol Letelier", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Recoleta", delitos:"Malversación de fondos"},
+  {id:16, caso:"Caso Penta", año:2014, monto:30100000000, responsable:"Jovino Novoa, Carlos Alberto Délano", sector:"Derecha", partido:"UDI", posicion:"Privado", comuna:"Santiago", delitos:"Fraude tributario, boletas falsas"},
+  {id:17, caso:"Caso SQM", año:2015, monto:12000000000, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"Privado", comuna:"Santiago", delitos:"Financiamiento irregular de políticos"},
+  {id:18, caso:"Alcalde de Ñuñoa (Pedro Sabat)", año:2015, monto:15700000, responsable:"Pedro Sabat", sector:"Derecha", partido:"RN", posicion:"Alcalde", comuna:"Ñuñoa"},
+  {id:19, caso:"Pacogate (Carabineros)", año:2016, monto:35000000000, responsable:"Eduardo Gordon, Gustavo González, Bruno Villalobos", sector:"Ninguno", partido:"NA", posicion:"Carabineros", comuna:"Santiago", delitos:"Malversación de caudales públicos"},
+  {id:20, caso:"Exalcalde La Pintana (Jaime Pavez)", año:2016, monto:35000000, responsable:"Jaime Pavez", sector:"Centro", partido:"PPD", posicion:"Alcalde", comuna:"La Pintana", delitos:"Malversación", conclusion:"condena"},
+  {id:21, caso:"Alcaldesa San Bernardo (Nora Cuevas)", año:2017, monto:9000000000, responsable:"Nora Cuevas", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"San Bernardo", delitos:"Fraude al Fisco, malversación, desfalco"},
+  {id:22, caso:"Alcalde La Florida (Rodolfo Carter)", año:2017, monto:2500000000, responsable:"Rodolfo Carter", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"La Florida", delitos:"Asociación ilícita, apropiación indebida", estado:"En investigación"},
+  {id:23, caso:"Caso Luminarias", año:2017, monto:1659000000, responsable:"Francisco Javier Jara", sector:"Ninguno", partido:"NA", posicion:"Privado", comuna:"Santiago", delitos:"Boletas falsas, cohecho, lavado de activos"},
+  {id:24, caso:"Caso San Ramón", año:2017, monto:283000000, responsable:"Miguel Ángel Aguilera", sector:"Izquierda", partido:"PS", posicion:"Alcalde", comuna:"San Ramón", delitos:"Enriquecimiento ilícito, lavado de activos, cohecho"},
+  {id:25, caso:"Exalcalde de Talca (Juan Castro)", año:2018, monto:11000000000, responsable:"Juan Castro", sector:"Derecha", partido:"RN", posicion:"Alcalde", comuna:"Talca", delitos:"Malversación, cohecho, negociación incompatible"},
+  {id:26, caso:"Alcaldesa de Lampa (Graciela Ortúzar)", año:2018, monto:6000000000, responsable:"Graciela Ortúzar Novoa", sector:"Derecha", partido:"RN", posicion:"Alcalde", comuna:"Lampa", delitos:"Malversación, apropiación indebida"},
+  {id:27, caso:"Alcalde Lo Barnechea (Felipe Guevara)", año:2018, monto:680000000, responsable:"Felipe Guevara", sector:"Derecha", partido:"RN", posicion:"Alcalde", comuna:"Lo Barnechea", delitos:"Malversación, fraude al Fisco, boletas falsas"},
+  {id:28, caso:"Alcalde de Valparaíso (Jorge Castro)", año:2018, monto:289350646, responsable:"Jorge Castro", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Valparaíso", delitos:"Fraude al fisco, malversación"},
+  {id:29, caso:"Alcalde Puente Alto (Germán Codina)", año:2018, monto:203000000, responsable:"Germán Codina", sector:"Derecha", partido:"RN", posicion:"Alcalde", comuna:"Puente Alto"},
+  {id:30, caso:"Caso Penta (Pablo Wagner)", año:2018, monto:66000000, responsable:"Pablo Wagner", sector:"Derecha", partido:"UDI", posicion:"Subsecretario", comuna:"Santiago", delitos:"Delitos tributarios, enriquecimiento ilícito"},
+  {id:31, caso:"Milicogate (Ejército)", año:2019, monto:14300000000, responsable:"Óscar Izurieta, Juan Miguel Fuente-Alba, Humberto Oviedo", sector:"Ninguno", partido:"NA", posicion:"Ejército", comuna:"Santiago", delitos:"Fraude fiscal, enriquecimiento ilícito"},
+  {id:32, caso:"Papaya Gate (Coquimbo)", año:2019, monto:9800000000, responsable:"Lucía Pinto, Eduardo Espinoza, José Cáceres", sector:"Derecha", partido:"UDI", posicion:"Intendente", comuna:"Coquimbo", delitos:"Fraude al Fisco", estado:"Querella"},
+  {id:33, caso:"Alcalde Puerto Natales (Fernando Paredes)", año:2019, monto:1673754000, responsable:"Fernando Paredes", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Puerto Natales", delitos:"Cohecho, violación de secreto"},
+  {id:34, caso:"Caso SQM (Claudio Eguiluz)", año:2019, monto:465000000, responsable:"Claudio Eguiluz", sector:"Derecha", partido:"RN", posicion:"NA", comuna:"Santiago", delitos:"Boletas falsas"},
+  {id:35, caso:"Caso Penta (Laurence Golborne)", año:2019, monto:378000000, responsable:"Laurence Golborne", sector:"Derecha", partido:"UDI", posicion:"NA", comuna:"Santiago", delitos:"Facturas ideológicamente falsas", conclusion:"multa"},
+  {id:36, caso:"Alcaldesa Providencia (Josefa Errázuriz)", año:2019, monto:31000000, responsable:"Josefa Errázuriz", sector:"Izquierda", partido:"PPD", posicion:"Alcalde", comuna:"Providencia", delitos:"Pago de horas extra", conclusion:"Sin condena por prescripción"},
+  {id:37, caso:"Alcalde Estación Central (Rodrigo Delgado)", año:2020, monto:4300000000, responsable:"Rodrigo Delgado", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Estación Central", delitos:"Déficit financiero"},
+  {id:38, caso:"Caso Canastas (Antofagasta)", año:2020, monto:4000000000, responsable:"Edgar Blanco", sector:"Derecha", partido:"RN", posicion:"Intendente", comuna:"Antofagasta", delitos:"Irregularidades en contratos, fraude al Fisco", estado:"En investigación"},
+  {id:39, caso:"Corporación Providencia", año:2020, monto:1600000000, responsable:"Mariano Rosenzvaig", sector:"Izquierda", partido:"RD", posicion:"Funcionario municipal", comuna:"Providencia", delitos:"Malversación"},
+  {id:40, caso:"Marcela Cubillos / U. San Sebastián", año:2020, monto:816000000, responsable:"Marcela Cubillos, Andres Chadwick", sector:"Derecha", partido:"UDI", posicion:"NA", comuna:"Santiago", delitos:"Corrupción, soborno, cohecho", estado:"En investigación"},
+  {id:41, caso:"Alcalde Melipilla (Iván Campos)", año:2020, monto:497000000, responsable:"Iván Campos", sector:"Derecha", partido:"RN", posicion:"Alcalde", comuna:"Melipilla", delitos:"Fraude al fisco"},
+  {id:42, caso:"Alcalde Linares (Mario Meza)", año:2020, monto:139739316, responsable:"Mario Meza Vásquez", sector:"Derecha", partido:"RN", posicion:"Alcalde", comuna:"Linares", estado:"Formalizado"},
+  {id:43, caso:"Alcalde suplente Tierra Amarilla", año:2020, monto:102000000, responsable:"Mario Morales", sector:"Izquierda", partido:"PS", posicion:"Alcalde", comuna:"Tierra Amarilla", delitos:"Fraude al fisco, cohecho, soborno", estado:"Prisión preventiva"},
+  {id:44, caso:"Alcalde Las Condes (Joaquín Lavín)", año:2020, monto:59595096, responsable:"Joaquín Lavín Infante", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Las Condes"},
+  {id:45, caso:"Alcaldesa Viña del Mar (Virginia Reginato)", año:2021, monto:100000000000, responsable:"Virginia Reginato", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Viña del Mar", delitos:"Fraude al fisco, abandono de deberes", estado:"En investigación"},
+  {id:46, caso:"Alcalde San Joaquín (Sergio Echeverria)", año:2021, monto:10210000000, responsable:"Sergio Echeverria", sector:"Centro", partido:"PPD", posicion:"Alcalde", comuna:"San Joaquín", estado:"En investigación"},
+  {id:47, caso:"Alcalde Guaitecas (Cristian Alvarado)", año:2021, monto:351000000, responsable:"Cristian Alvarado Oyarzo", sector:"Derecha", partido:"Independiente", posicion:"Alcalde", comuna:"Guaitecas", conclusion:"10 años de presidio"},
+  {id:48, caso:"Caso Corpesca (Jaime Orpis)", año:2021, monto:264254000, responsable:"Jaime Orpis", sector:"Derecha", partido:"UDI", posicion:"NA", comuna:"Santiago", delitos:"Fraude al fisco, cohecho"},
+  {id:49, caso:"Alcalde Santiago (Felipe Alessandri)", año:2021, monto:188000000, responsable:"Felipe Alessandri", sector:"Derecha", partido:"RN", posicion:"Alcalde", comuna:"Santiago"},
+  {id:50, caso:"Director PDI (Héctor Espinosa)", año:2021, monto:146000000, responsable:"Héctor Espinosa", sector:"Ninguno", partido:"NA", posicion:"PDI", comuna:"Santiago", delitos:"Malversación, falsificación, lavado de activos", conclusion:"17 años de presidio"},
+  {id:51, caso:"Caso Cuentas Corrientes (San Bernardo)", año:2021, monto:null, responsable:"NA", sector:"NA", partido:"NA", posicion:"Municipio", comuna:"San Bernardo"},
+  {id:52, caso:"Alcalde Rancagua (Juan Ramón Godoy)", año:2022, monto:2492000000, responsable:"Juan Ramón Godoy", sector:"Izquierda", partido:"PS", posicion:"Alcalde", comuna:"Rancagua", delitos:"Fraude al fisco, malversación, cohecho, lavado de activos"},
+  {id:53, caso:"Alcalde Pozo Almonte (Richard Godoy)", año:2022, monto:1316591501, responsable:"Richard Godoy Aguirre", sector:"Centro", partido:"DC", posicion:"Alcalde", comuna:"Pozo Almonte", delitos:"Facturas falsas", estado:"querella"},
+  {id:54, caso:"Alcalde Recoleta (Daniel Jadue)", año:2022, monto:1291937035, responsable:"Daniel Jadue", sector:"Izquierda", partido:"PC", posicion:"Alcalde", comuna:"Recoleta"},
+  {id:55, caso:"Municipalidad Río Bueno (Carolina Silva)", año:2022, monto:1100000000, responsable:"Carolina Silva, Luis Reyes", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Los Lagos", delitos:"Fraude al fisco, malversación, falsificación"},
+  {id:56, caso:"Alcalde Mostazal (Sergio Medel)", año:2022, monto:200000000, responsable:"Sergio Medel", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Mostazal"},
+  {id:57, caso:"Alcaldesa Antofagasta (Karen Rojo)", año:2022, monto:24000000, responsable:"Karen Rojo", sector:"Derecha", partido:"Independiente", posicion:"Alcalde", comuna:"Antofagasta", delitos:"Fraude al fisco", conclusion:"5 años de presidio"},
+  {id:58, caso:"Exfiscal Puerto Natales", año:2022, monto:7000000, responsable:"Cristian Muñoz", sector:"NA", partido:"NA", posicion:"Fiscal", comuna:"Puerto Natales", delitos:"Cohecho, revelación de secretos"},
+  {id:59, caso:"Operación Tributos", año:2023, monto:8713407156, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"NA", comuna:"Santiago", delitos:"Asociación ilícita, lavado de activos"},
+  {id:60, caso:"Alcalde Vitacura (Raúl Torrealba)", año:2023, monto:4500000000, responsable:"Raúl Torrealba", sector:"Derecha", partido:"RN", posicion:"Alcalde", comuna:"Vitacura", delitos:"Malversación, fraude al Fisco, boletas falsas", estado:"Prisión preventiva"},
+  {id:61, caso:"Caso Convenios (Arica)", año:2023, monto:2500000000, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"Fundación", comuna:"Arica"},
+  {id:62, caso:"Caso Convenios (Luciano Rivas, Araucanía)", año:2023, monto:2113000000, responsable:"Luciano Rivas", sector:"Derecha", partido:"Evópoli", posicion:"Fundación", comuna:"La Araucanía", delitos:"Negociaciones incompatibles, tráfico de influencia, fraude al fisco"},
+  {id:63, caso:"Alcalde Rinconada (Juan Galdames)", año:2023, monto:2000000000, responsable:"Juan Galdames", sector:"Derecha", partido:"Independiente", posicion:"Alcalde", comuna:"Rinconada", delitos:"Malversación de Fondos Públicos"},
+  {id:64, caso:"Caso Convenios (Fundación ProCultura)", año:2023, monto:1683000000, responsable:"Alberto Larraín", sector:"Izquierda", partido:"NA", posicion:"Fundación", comuna:"Santiago", delitos:"Fraude al fisco, malversación, tráfico de influencias", estado:"En investigación"},
+  {id:65, caso:"Caso Convenios (Chinquihue, Los Lagos)", año:2023, monto:1600000000, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"Fundación", comuna:"Los Lagos"},
+  {id:66, caso:"Caso Convenios (El Canelo de Nos)", año:2023, monto:1200000000, responsable:"NA", sector:"NA", partido:"NA", posicion:"Fundación", comuna:"Los Lagos"},
+  {id:67, caso:"Caso Convenios (Kimün)", año:2023, monto:1200000000, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"Fundación", comuna:"Los Lagos"},
+  {id:68, caso:"Alcalde Algarrobo (José Luis Yáñez)", año:2023, monto:1160000000, responsable:"José Luis Yáñez", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Algarrobo", delitos:"Malversación, cohecho, lavado de activos", estado:"Prisión preventiva"},
+  {id:69, caso:"Alcalde Arica (Gerardo Espíndola)", año:2023, monto:1100000000, responsable:"Gerardo Espíndola", sector:"Centro", partido:"Liberal", posicion:"Alcalde", comuna:"Arica", delitos:"Malversación", estado:"En investigación"},
+  {id:70, caso:"Alcalde Sagrada Familia (Martín Arriagada)", año:2023, monto:750000000, responsable:"Martín Arriagada Urrutia", sector:"Derecha", partido:"UDI", posicion:"Alcalde", comuna:"Sagrada Familia", conclusion:"3 años de presidio"},
+  {id:71, caso:"Caso Convenios arista manicure (Araucanía)", año:2023, monto:730000000, responsable:"Mauricio Ojeda", sector:"Derecha", partido:"Republicano", posicion:"Fundación", comuna:"La Araucanía", delitos:"Fraude al Fisco, cohecho, lavado de activos"},
+  {id:72, caso:"Caso Convenios (Urbanismo Social)", año:2023, monto:577000000, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"Fundación", comuna:"Maule", estado:"En investigación"},
+  {id:73, caso:"Caso Convenios (Democracia Viva)", año:2023, monto:426000000, responsable:"Daniel Andrade, Carlos Contreras", sector:"Izquierda", partido:"RD", posicion:"Fundación", comuna:"Antofagasta", delitos:"Fraude al fisco"},
+  {id:74, caso:"Caso Convenios (Fundación Coigue)", año:2023, monto:421000000, responsable:"Luciano Rivas, Claudia Lillo", sector:"Derecha", partido:"Evópoli, UDI", posicion:"Fundación", comuna:"La Araucanía"},
+  {id:75, caso:"Caso Motorola (Katherine Martorell)", año:2023, monto:400000000, responsable:"Katherine Martorell", sector:"Derecha", partido:"RN", posicion:"Subsecretario", comuna:"Santiago", delitos:"Fraude al fisco"},
+  {id:76, caso:"Caso Convenios (Bonhomía, Biobío)", año:2023, monto:356000000, responsable:"NA", sector:"Derecha", partido:"Republicano", posicion:"Fundación", comuna:"Biobío"},
+  {id:77, caso:"Gastos electorales Comunes (Karina Oliva)", año:2023, monto:293093681, responsable:"Karina Oliva", sector:"Izquierda", partido:"Comunes", posicion:"NA", comuna:"Santiago", delitos:"Fraude de subvenciones"},
+  {id:78, caso:"Caso Convenios (RedCultivarte, Biobío)", año:2023, monto:274000000, responsable:"NA", sector:"Ninguno", partido:"NA", posicion:"Fundación", comuna:"Biobío"},
+  {id:79, caso:"Caso Convenios lencería (Camila Polizzi)", año:2023, monto:250000000, responsable:"Camila Polizzi, Diego Polanco", sector:"Izquierda", partido:"Independiente", posicion:"Fundación", comuna:"Biobío", delitos:"Estafa, falsificación, lavado de activos"},
+  {id:80, caso:"Caso Convenios (Atacama)", año:2023, monto:128000000, responsable:"NA", sector:"Izquierda", partido:"DC, PRO", posicion:"Fundación", comuna:"Atacama"},
+  {id:81, caso:"Exadministrador Tierra Amarilla", año:2023, monto:80069002, responsable:"Jaime Bahamondes Cabrera", sector:"Centro", partido:"DC", posicion:"Funcionario municipal", comuna:"Tierra Amarilla", delitos:"Fraude al fisco", conclusion:"condena"}
+];
+
+let activeSector = "todos";
+let activeTipo = "todos";
+let activeEstado = "todos";
+let markers = [];
+let layerGroup;
+let sidebarOpen = true;
+
+const map = L.map('map', {
+  center: [-33.5, -70.6],
+  zoom: 5,
+  zoomControl: true,
+  attributionControl: false
+});
+
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  attribution: '©OpenStreetMap ©CartoDB'
+}).addTo(map);
+
+layerGroup = L.layerGroup().addTo(map);
+
+function formatMonto(m) {
+  if (!m) return "Desconocido";
+  const mm = m / 1000000;
+  if (mm >= 1000) return `$${(mm/1000).toFixed(1)} mil mill.`;
+  return `$${Math.round(mm).toLocaleString('es-CL')} mill.`;
+}
+
+function getRadius(monto) {
+  if (!monto) return 6;
+  const m = monto / 1000000;
+  if (m < 50) return 6;
+  if (m < 500) return 10;
+  if (m < 2000) return 16;
+  if (m < 15000) return 24;
+  if (m < 50000) return 36;
+  return 48;
+}
+
+function getSectorColor(sector) {
+  const colors = {
+    "Derecha": "#e74c3c",
+    "Izquierda": "#3498db",
+    "Centro": "#f39c12",
+    "Ninguno": "#9b59b6",
+    "NA": "#7f8c8d"
+  };
+  return colors[sector] || "#7f8c8d";
+}
+
+function renderMarkers(data) {
+  layerGroup.clearLayers();
+  markers = [];
+
+  const groups = {};
+  data.forEach(c => {
+    if (!c.comuna || !COORDS[c.comuna]) return;
+    if (!groups[c.comuna]) groups[c.comuna] = [];
+    groups[c.comuna].push(c);
+  });
+
+  Object.entries(groups).forEach(([comuna, group]) => {
+    group.forEach((c, i) => {
+      const base = COORDS[c.comuna];
+      const angle = (i / group.length) * 2 * Math.PI;
+      const jitter = group.length > 1 ? 0.02 + i * 0.01 : 0;
+      const lat = base[0] + Math.sin(angle) * jitter;
+      const lng = base[1] + Math.cos(angle) * jitter;
+
+      const color = getSectorColor(c.sector);
+      const r = getRadius(c.monto);
+
+      const marker = L.circleMarker([lat, lng], {
+        radius: r,
+        fillColor: color,
+        color: 'rgba(255,255,255,0.4)',
+        weight: 1.5,
+        fillOpacity: 0.75
+      });
+
+      marker.bindPopup(buildPopup(c), { maxWidth: 300, className: 'dark-popup' });
+
+      marker.on('mouseover', function() {
+        this.setStyle({ fillOpacity: 1, weight: 2.5, color: 'white' });
+      });
+      marker.on('mouseout', function() {
+        this.setStyle({ fillOpacity: 0.75, weight: 1.5, color: 'rgba(255,255,255,0.4)' });
+      });
+
+      layerGroup.addLayer(marker);
+      markers.push({ marker, data: c });
+    });
+  });
+}
+
+function buildPopup(c) {
+  const sectorBadge = c.sector && c.sector !== "NA" ? `<span class="popup-tag sector">${c.sector}</span>` : '';
+  const partidoBadge = c.partido && c.partido !== "NA" ? `<span class="popup-tag partido">${c.partido}</span>` : '';
+  const delitos = c.delitos ? `<div class="popup-detail"><strong style="color:var(--text)">Delitos:</strong><br>${c.delitos}</div>` : '';
+  const resp = (c.responsable && c.responsable !== "NA") ? `<div class="popup-detail"><strong style="color:var(--text)">Responsable:</strong> ${c.responsable}</div>` : '';
+  const posicion = (c.posicion && c.posicion !== "NA") ? `<span class="popup-tag">${c.posicion}</span>` : '';
+  const status = c.conclusion ? `<div class="popup-status">⚖️ ${c.conclusion}</div>` : (c.estado ? `<div class="popup-status">🔍 ${c.estado}</div>` : '');
+
+  return `<div class="popup-inner">
+    <div class="popup-year">📅 ${c.año} · ${c.comuna || 'Nivel nacional'}</div>
+    <div class="popup-title">${c.caso}</div>
+    <div class="popup-amount">${formatMonto(c.monto)}</div>
+    <div class="popup-tags">${sectorBadge}${partidoBadge}${posicion}</div>
+    ${resp}
+    ${delitos}
+    ${status}
+  </div>`;
+}
+
+function applyFilters() {
+  const search = document.getElementById('search-input').value.toLowerCase();
+  const yearMin = parseInt(document.getElementById('year-min').value);
+  const yearMax = parseInt(document.getElementById('year-max').value);
+
+  const filtered = casos.filter(c => {
+    if (c.año < Math.min(yearMin, yearMax) || c.año > Math.max(yearMin, yearMax)) return false;
+    if (search) {
+      const hay = `${c.caso} ${c.responsable} ${c.comuna} ${c.sector} ${c.partido} ${c.delitos || ''}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    if (activeSector !== 'todos' && c.sector !== activeSector) return false;
+    if (activeTipo === 'fundaciones' && c.posicion !== 'Fundación') return false;
+    if (activeTipo === 'alcaldias' && c.posicion !== 'Alcalde') return false;
+    if (activeTipo === 'ffaa' && !['Carabineros', 'Ejército', 'PDI', 'Policía de Investigaciones'].includes(c.posicion)) return false;
+    if (activeEstado !== 'todos' && c.estado !== activeEstado && c.conclusion !== activeEstado) return false;
+    return true;
+  });
+
+  renderMarkers(filtered);
+  updateStats(filtered);
+}
+
+function updateStats(data) {
+  const validData = data.filter(c => COORDS[c.comuna]);
+  const total = validData.reduce((s, c) => s + (c.monto || 0), 0);
+  const comunas = new Set(validData.map(c => c.comuna).filter(Boolean)).size;
+  document.getElementById('stat-casos').textContent = validData.length;
+  document.getElementById('stat-monto').textContent = formatMonto(total);
+  document.getElementById('stat-comunas').textContent = comunas;
+}
+
+function updateYearDisplay() {
+  document.getElementById('year-min-label').textContent = document.getElementById('year-min').value;
+  document.getElementById('year-max-label').textContent = document.getElementById('year-max').value;
+}
+
+const sectors = ["todos", "Derecha", "Izquierda", "Centro", "Ninguno"];
+const sectorLabels = { todos: "Todos", Derecha: "Derecha", Izquierda: "Izquierda", Centro: "Centro", Ninguno: "Sin partido" };
+const sectorColors = { todos: "#fff", Derecha: "#e74c3c", Izquierda: "#3498db", Centro: "#f39c12", Ninguno: "#9b59b6" };
+
+function buildSectorFilters() {
+  const container = document.getElementById('sector-filters');
+  sectors.forEach(s => {
+    const cnt = s === 'todos' ? casos.length : casos.filter(c => c.sector === s).length;
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn' + (s === 'todos' ? ' active' : '');
+    btn.innerHTML = `<span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:${sectorColors[s]};flex-shrink:0"></span>${sectorLabels[s]}</span><span class="count">${cnt}</span>`;
+    btn.onclick = () => {
+      document.querySelectorAll('#sector-filters .filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeSector = s;
+      applyFilters();
+    };
+    container.appendChild(btn);
+  });
+}
+
+function selectTipo(btn, tipo) {
+  document.querySelectorAll('#tipo-filters .filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  activeTipo = tipo;
+  applyFilters();
+}
+
+function buildEstadoFilters() {
+  const container = document.getElementById('estado-filters');
+  const estados = ["todos", "En investigación", "Prisión preventiva", "Condenado", "condena", "impunidad"];
+  const labels = { todos: "Todos", "En investigación": "En investigación", "Prisión preventiva": "Prisión preventiva", "Condenado": "Condenado", "condena": "Condena firme", "impunidad": "Impunidad" };
+  estados.forEach(e => {
+    const cnt = e === 'todos' ? casos.length : casos.filter(c => c.estado === e || c.conclusion === e).length;
+    if (cnt === 0 && e !== 'todos') return;
+    const btn = document.createElement('button');
+    btn.className = 'filter-btn' + (e === 'todos' ? ' active' : '');
+    btn.innerHTML = `${labels[e]}<span class="count">${cnt}</span>`;
+    btn.onclick = () => {
+      document.querySelectorAll('#estado-filters .filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeEstado = e;
+      applyFilters();
+    };
+    container.appendChild(btn);
+  });
+}
+
+function updateTipoCounts() {
+  document.getElementById('cnt-todos').textContent = casos.length;
+  document.getElementById('cnt-fundaciones').textContent = casos.filter(c=>c.posicion==='Fundación').length;
+  document.getElementById('cnt-alcaldias').textContent = casos.filter(c=>c.posicion==='Alcalde').length;
+  document.getElementById('cnt-ffaa').textContent = casos.filter(c=>['Carabineros','Ejército','PDI','Policía de Investigaciones'].includes(c.posicion)).length;
+}
+
+function toggleSidebar() {
+  const sb = document.getElementById('sidebar');
+  sidebarOpen = !sidebarOpen;
+  sb.classList.toggle('collapsed', !sidebarOpen);
+  document.getElementById('sidebar-toggle').textContent = sidebarOpen ? 'FILTROS ▶' : '◀ FILTROS';
+}
+
+buildSectorFilters();
+buildEstadoFilters();
+updateTipoCounts();
+applyFilters();
+
+setTimeout(() => {
+  const b = document.getElementById('info-banner');
+  b.style.opacity = '0';
+  setTimeout(() => b.style.display = 'none', 300);
+}, 5000);
+</script>
+</body>
+</html>
