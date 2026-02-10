@@ -1,0 +1,713 @@
+# ═══════════════════════════════════════════════════════════════════
+# CARTE INTERACTIVE DE LA CORRUPTION AU CHILI
+# Version française · Montants en euros (1 € = 1 050 CLP)
+# ═══════════════════════════════════════════════════════════════════
+# Packages nécessaires :
+#   install.packages(c("leaflet", "dplyr", "htmltools", "htmlwidgets"))
+# ═══════════════════════════════════════════════════════════════════
+
+library(leaflet)
+library(dplyr)
+library(htmltools)
+library(htmlwidgets)
+
+
+# ─────────────────────────────────────────────
+# 1. TAUX DE CONVERSION
+# ─────────────────────────────────────────────
+TAUX_CLP_EUR <- 1050  # 1 EUR = 1050 CLP
+
+
+# ─────────────────────────────────────────────
+# 2. COORDONNÉES DES COMMUNES
+# ─────────────────────────────────────────────
+coords <- data.frame(
+  commune = c(
+    "Recoleta", "Santiago", "Ñuñoa", "Providencia", "Vitacura",
+    "Las Condes", "La Florida", "Estación Central", "Lo Barnechea",
+    "San Joaquín", "San Bernardo", "Melipilla", "Rinconada", "Mostazal",
+    "La Pintana", "Lampa", "Puente Alto", "San Ramón", "Antofagasta",
+    "Pozo Almonte", "Arica", "Valparaíso", "Viña del Mar", "Algarrobo",
+    "Coquimbo", "Rancagua", "Talca", "Linares", "Sagrada Familia",
+    "Tierra Amarilla", "Puerto Natales", "Guaitecas", "La Araucanía",
+    "Los Lagos", "Maule", "Biobío", "Atacama"
+  ),
+  lat = c(
+    -33.408, -33.455, -33.456, -33.433, -33.387,
+    -33.408, -33.522, -33.458, -33.352,
+    -33.492, -33.593, -33.694, -32.843, -34.00,
+    -33.584, -33.291, -33.611, -33.517, -23.651,
+    -20.259, -18.478, -33.047, -33.025, -33.367,
+    -29.953, -34.171, -35.426, -35.846, -34.967,
+    -27.483, -51.730, -43.900, -38.736,
+    -41.469, -35.426, -36.827, -27.367
+  ),
+  lng = c(
+    -70.643, -70.648, -70.601, -70.616, -70.592,
+    -70.535, -70.594, -70.697, -70.518,
+    -70.640, -70.717, -71.213, -70.799, -70.70,
+    -70.632, -70.883, -70.575, -70.633, -70.398,
+    -69.787, -70.313, -71.613, -71.552, -71.667,
+    -71.339, -70.744, -71.655, -71.597, -71.400,
+    -70.267, -72.498, -74.100, -72.590,
+    -72.942, -71.655, -73.050, -70.332
+  ),
+  stringsAsFactors = FALSE
+)
+
+
+# ─────────────────────────────────────────────
+# 3. DONNÉES DES AFFAIRES
+# ─────────────────────────────────────────────
+cas <- data.frame(
+  id = 1:81,
+  affaire = c(
+    "Pinocheques",
+    "Affaire Ceresita",
+    "Affaire MOP-Gate",
+    "Affaire Coimas (pots-de-vin)",
+    "Affaire Inverlink",
+    "Affaire Riggs",
+    "Sebastián Piñera (LAN)",
+    "Affaire ChileDeportes",
+    "Affaire Subventions (Éducation)",
+    "Affaire EFE",
+    "Claudia Nogueira (députée)",
+    "Eduardo Gordon (Carabiniers)",
+    "Affaire Corpesca",
+    "Affaire LarrainVial",
+    "Maire de Recoleta (Sol Letelier)",
+    "Affaire Penta",
+    "Affaire SQM",
+    "Maire de Ñuñoa (Pedro Sabat)",
+    "Pacogate (Carabiniers)",
+    "Exmaire La Pintana (Jaime Pavez)",
+    "Maire San Bernardo (Nora Cuevas)",
+    "Maire La Florida (Rodolfo Carter)",
+    "Affaire Luminarias",
+    "Affaire San Ramón",
+    "Exmaire de Talca (Juan Castro)",
+    "Maire de Lampa (Graciela Ortúzar)",
+    "Maire Lo Barnechea (Felipe Guevara)",
+    "Maire de Valparaíso (Jorge Castro)",
+    "Maire Puente Alto (Germán Codina)",
+    "Affaire Penta (Pablo Wagner)",
+    "Milicogate (Armée de terre)",
+    "Papaya Gate (Coquimbo)",
+    "Maire Puerto Natales (F. Paredes)",
+    "Affaire SQM (Claudio Eguiluz)",
+    "Affaire Penta (Laurence Golborne)",
+    "Maire Providencia (Josefa Errázuriz)",
+    "Maire Estación Central (R. Delgado)",
+    "Affaire Paniers (Antofagasta)",
+    "Corporation de Providencia",
+    "Marcela Cubillos / Univ. San Sebastián",
+    "Maire Melipilla (Iván Campos)",
+    "Maire Linares (Mario Meza)",
+    "Maire suplente Tierra Amarilla",
+    "Maire Las Condes (Joaquín Lavín)",
+    "Maire Viña del Mar (Virginia Reginato)",
+    "Maire San Joaquín (Sergio Echeverria)",
+    "Maire Guaitecas (Cristian Alvarado)",
+    "Affaire Corpesca (Jaime Orpis)",
+    "Maire Santiago (Felipe Alessandri)",
+    "Directeur PDI (Héctor Espinosa)",
+    "Comptes municipaux (San Bernardo)",
+    "Maire de Rancagua (Juan Ramón Godoy)",
+    "Maire Pozo Almonte (Richard Godoy)",
+    "Maire Recoleta (Daniel Jadue)",
+    "Mairie Río Bueno (Carolina Silva)",
+    "Maire Mostazal (Sergio Medel)",
+    "Maire Antofagasta (Karen Rojo)",
+    "Exprocureur Puerto Natales",
+    "Opération Tributos",
+    "Maire Vitacura (Raúl Torrealba)",
+    "Affaire Conventions (Arica)",
+    "Affaire Conventions (Luciano Rivas)",
+    "Maire Rinconada (Juan Galdames)",
+    "Fondation ProCultura",
+    "Fondation Chinquihue (Los Lagos)",
+    "Fondation El Canelo de Nos",
+    "Fondation Kimün (Los Lagos)",
+    "Maire Algarrobo (José Luis Yáñez)",
+    "Maire Arica (Gerardo Espíndola)",
+    "Maire Sagrada Familia (M. Arriagada)",
+    "Affaire Conventions (manicure, Araucanía)",
+    "Fondation Urbanisme Social (Maule)",
+    "Fondation Democracia Viva",
+    "Fondation Coigue (Araucanía)",
+    "Affaire Motorola (Katherine Martorell)",
+    "Fondation Bonhomía (Biobío)",
+    "Karina Oliva (dépenses électorales)",
+    "ONG RedCultivarte (Biobío)",
+    "Affaire Lingerie (Camila Polizzi)",
+    "Fondation Comprometidos (Atacama)",
+    "Exadministrateur Tierra Amarilla"
+  ),
+  annee = c(
+    1989, 1993, 2000, 2002, 2003, 2004, 2006, 2006, 2006, 2008,
+    2009, 2011, 2012, 2013, 2013, 2014, 2015, 2015, 2016, 2016,
+    2017, 2017, 2017, 2017, 2018, 2018, 2018, 2018, 2018, 2018,
+    2019, 2019, 2019, 2019, 2019, 2019, 2020, 2020, 2020, 2020,
+    2020, 2020, 2020, 2020, 2021, 2021, 2021, 2021, 2021, 2021,
+    2021, 2022, 2022, 2022, 2022, 2022, 2022, 2022, 2023, 2023,
+    2023, 2023, 2023, 2023, 2023, 2023, 2023, 2023, 2023, 2023,
+    2023, 2023, 2023, 2023, 2023, 2023, 2023, 2023, 2023, 2023,
+    2023
+  ),
+  montant_clp = c(
+    18400000000, 40000000, 1253000000, 35000000, 3000000000,
+    1550000000, 19840000000, 946000000, 290000000, 23671000,
+    30000000, 75479839, 4670000000, 1700000000, 22917478,
+    30100000000, 12000000000, 15700000, 35000000000, 35000000,
+    9000000000, 2500000000, 1659000000, 283000000, 11000000000,
+    6000000000, 680000000, 289350646, 203000000, 66000000,
+    14300000000, 9800000000, 1673754000, 465000000, 378000000,
+    31000000, 4300000000, 4000000000, 1600000000, 816000000,
+    497000000, 139739316, 102000000, 59595096, 100000000000,
+    10210000000, 351000000, 264254000, 188000000, 146000000,
+    NA, 2492000000, 1316591501, 1291937035, 1100000000,
+    200000000, 24000000, 7000000, 8713407156, 4500000000,
+    2500000000, 2113000000, 2000000000, 1683000000, 1600000000,
+    1200000000, 1200000000, 1160000000, 1100000000, 750000000,
+    730000000, 577000000, 426000000, 421000000, 400000000,
+    356000000, 293093681, 274000000, 250000000, 128000000,
+    80069002
+  ),
+  responsable = c(
+    "Augusto Pinochet", "Inconnu", "Inconnu", "Patricio Tombolini", "Inconnu",
+    "Augusto Pinochet", "Sebastián Piñera", "Inconnu", "Franka Grez", "Luis Ajenjo",
+    "Claudia Nogueira", "Eduardo Gordon", "Pablo Longueira, Jaime Orpis, Fulvio Rossi", "Inconnu", "Sol Letelier",
+    "Jovino Novoa, Carlos Alberto Délano", "Inconnu", "Pedro Sabat", "Eduardo Gordon, Gustavo González, Bruno Villalobos", "Jaime Pavez",
+    "Nora Cuevas", "Rodolfo Carter", "Francisco Javier Jara", "Miguel Ángel Aguilera", "Juan Castro",
+    "Graciela Ortúzar Novoa", "Felipe Guevara", "Jorge Castro", "Germán Codina", "Pablo Wagner",
+    "Óscar Izurieta, Juan Miguel Fuente-Alba, Humberto Oviedo", "Lucía Pinto, Eduardo Espinoza, José Cáceres", "Fernando Paredes", "Claudio Eguiluz", "Laurence Golborne",
+    "Josefa Errázuriz", "Rodrigo Delgado", "Edgar Blanco", "Mariano Rosenzvaig", "Marcela Cubillos, Andres Chadwick",
+    "Iván Campos", "Mario Meza Vásquez", "Mario Morales", "Joaquín Lavín Infante", "Virginia Reginato",
+    "Sergio Echeverria", "Cristian Alvarado Oyarzo", "Jaime Orpis", "Felipe Alessandri", "Héctor Espinosa",
+    "Inconnu", "Juan Ramón Godoy", "Richard Godoy Aguirre", "Daniel Jadue", "Carolina Silva, Luis Reyes",
+    "Sergio Medel", "Karen Rojo", "Cristian Muñoz", "Inconnu", "Raúl Torrealba",
+    "Inconnu", "Luciano Rivas", "Juan Galdames", "Alberto Larraín", "Inconnu",
+    "Inconnu", "Inconnu", "José Luis Yáñez", "Gerardo Espíndola", "Martín Arriagada Urrutia",
+    "Mauricio Ojeda", "Inconnu", "Daniel Andrade, Carlos Contreras", "Luciano Rivas, Claudia Lillo", "Katherine Martorell",
+    "Inconnu", "Karina Oliva", "Inconnu", "Camila Polizzi, Diego Polanco", "Inconnu",
+    "Jaime Bahamondes Cabrera"
+  ),
+  bord = c(
+    "Droite", "Aucun", "Gauche", "Gauche", "Aucun",
+    "Droite", "Droite", "Gauche", "Aucun", "Centre",
+    "Droite", "Aucun", "Droite", "Aucun", "Droite",
+    "Droite", "Aucun", "Droite", "Aucun", "Centre",
+    "Droite", "Droite", "Aucun", "Gauche", "Droite",
+    "Droite", "Droite", "Droite", "Droite", "Droite",
+    "Aucun", "Droite", "Droite", "Droite", "Droite",
+    "Gauche", "Droite", "Droite", "Gauche", "Droite",
+    "Droite", "Droite", "Gauche", "Droite", "Droite",
+    "Centre", "Droite", "Droite", "Droite", "Aucun",
+    "NA", "Gauche", "Centre", "Gauche", "Droite",
+    "Droite", "Droite", "NA", "Aucun", "Droite",
+    "Aucun", "Droite", "Droite", "Gauche", "Aucun",
+    "NA", "Aucun", "Droite", "Centre", "Droite",
+    "Droite", "Aucun", "Gauche", "Droite", "Droite",
+    "Droite", "Gauche", "Aucun", "Gauche", "Gauche",
+    "Centre"
+  ),
+  parti = c(
+    "NA", "NA", "PPD, PS, PR", "PR, DC", "NA",
+    "NA", "RN", "PPD", "NA", "DC",
+    "UDI", "NA", "UDI", "NA", "UDI",
+    "UDI", "NA", "RN", "NA", "PPD",
+    "UDI", "UDI", "NA", "PS", "RN",
+    "RN", "RN", "UDI", "RN", "UDI",
+    "NA", "UDI", "UDI", "RN", "UDI",
+    "PPD", "UDI", "RN", "RD", "UDI",
+    "RN", "RN", "PS", "UDI", "UDI",
+    "PPD", "Indépendant", "UDI", "RN", "NA",
+    "NA", "PS", "DC", "PC", "UDI",
+    "UDI", "Indépendant", "NA", "NA", "RN",
+    "NA", "Evópoli", "Indépendant", "NA", "NA",
+    "NA", "NA", "UDI", "Libéral", "UDI",
+    "Républicain", "NA", "RD", "Evópoli, UDI", "RN",
+    "Républicain", "Comunes", "NA", "Indépendant", "DC, PRO",
+    "DC"
+  ),
+  poste = c(
+    "NA", "Privé", "NA", "NA", "Privé",
+    "Président", "Président", "NA", "Ministre", "NA",
+    "Députée", "Carabiniers", "Sénateur", "Privé", "Maire",
+    "Privé", "Privé", "Maire", "Carabiniers", "Maire",
+    "Maire", "Maire", "Privé", "Maire", "Maire",
+    "Maire", "Maire", "Maire", "Maire", "Sous-secrétaire",
+    "Armée", "Gouverneure", "Maire", "NA", "NA",
+    "Maire", "Maire", "Gouverneur", "Fonctionnaire", "NA",
+    "Maire", "Maire", "Maire", "Maire", "Maire",
+    "Maire", "Maire", "NA", "Maire", "Police judiciaire",
+    "Municipalité", "Maire", "Maire", "Maire", "Maire",
+    "Maire", "Maire", "Procureur", "NA", "Maire",
+    "Fondation", "Fondation", "Maire", "Fondation", "Fondation",
+    "Fondation", "Fondation", "Maire", "Maire", "Maire",
+    "Fondation", "Fondation", "Fondation", "Fondation", "Sous-secrétaire",
+    "Fondation", "NA", "Fondation", "Fondation", "Fondation",
+    "Fonctionnaire"
+  ),
+  commune = c(
+    NA, "Recoleta", "Santiago", "Santiago", "Santiago",
+    "Santiago", "Santiago", "Santiago", "Santiago", "Santiago",
+    "Santiago", "Santiago", "Santiago", "Santiago", "Recoleta",
+    "Santiago", "Santiago", "Ñuñoa", "Santiago", "La Pintana",
+    "San Bernardo", "La Florida", "Santiago", "San Ramón", "Talca",
+    "Lampa", "Lo Barnechea", "Valparaíso", "Puente Alto", "Santiago",
+    "Santiago", "Coquimbo", "Puerto Natales", "Santiago", "Santiago",
+    "Providencia", "Estación Central", "Antofagasta", "Providencia", "Santiago",
+    "Melipilla", "Linares", "Tierra Amarilla", "Las Condes", "Viña del Mar",
+    "San Joaquín", "Guaitecas", "Santiago", "Santiago", "Santiago",
+    "San Bernardo", "Rancagua", "Pozo Almonte", "Recoleta", "Los Lagos",
+    "Mostazal", "Antofagasta", "Puerto Natales", "Santiago", "Vitacura",
+    "Arica", "La Araucanía", "Rinconada", "Santiago", "Los Lagos",
+    "Los Lagos", "Los Lagos", "Algarrobo", "Arica", "Sagrada Familia",
+    "La Araucanía", "Maule", "Antofagasta", "La Araucanía", "Santiago",
+    "Biobío", "Santiago", "Biobío", "Biobío", "Atacama",
+    "Tierra Amarilla"
+  ),
+  delits = c(
+    "Fraude fiscal, faux passeports", NA, NA, "Corruption active", "Trafic d'informations confidentielles",
+    NA, "Délit d'initié — achat d'actions avec informations privilégiées", NA, "Détournement de fonds publics", "Fraude au Trésor public",
+    NA, "Détournement de fonds publics", "Fraude au Trésor, corruption passive", "Escroquerie", "Détournement de fonds municipaux",
+    "Fraude fiscale, fausses factures", "Financement illégal de partis politiques", NA, "Détournement massif de fonds publics", "Détournement de fonds",
+    "Fraude au Trésor, détournement, malversation", "Association de malfaiteurs, détournement", "Fausses factures, corruption, blanchiment", "Enrichissement illicite, blanchiment, corruption", "Détournement, corruption, trafic d'influence",
+    "Détournement, appropriation illicite", "Détournement, fraude, fausses factures", "Fraude au Trésor, détournement de fonds", NA, "Délits fiscaux, enrichissement illicite",
+    "Fraude fiscale, enrichissement illicite", "Fraude au Trésor public", "Corruption passive, violation du secret", "Fausses factures", "Fausses factures",
+    "Heures supplémentaires frauduleuses", "Déficit financier municipal", "Irrégularités dans des marchés publics, fraude", "Détournement de fonds publics", "Corruption, pot-de-vin, financement politique illégal",
+    "Fraude au Trésor public", NA, "Fraude, corruption, pot-de-vin", NA, "Fraude au Trésor, abandon de fonctions",
+    NA, NA, "Fraude au Trésor, corruption", NA, "Détournement, falsification, blanchiment",
+    NA, NA, "Détournement, falsification, blanchiment", NA, "Fraude, détournement, fausses factures",
+    NA, "Fraude", NA, "Trafic d'influence, fraude au Trésor", "Détournement de fonds publics",
+    "Fraude, détournement, trafic d'influence", NA, NA, NA, NA,
+    NA, "Détournement, corruption, blanchiment", "Détournement de fonds publics", NA,
+    "Fraude au Trésor public", NA, "Fraude au Trésor public", NA, "Escroquerie, faux, usurpation d'identité, blanchiment", NA,
+    "Fraude au Trésor public"
+  ),
+  etat = c(
+    "Impunité", NA, NA, NA, NA,
+    NA, NA, NA, NA, NA,
+    NA, NA, NA, NA, NA,
+    NA, NA, NA, NA, NA,
+    NA, "En enquête", NA, NA, NA,
+    NA, NA, NA, NA, NA,
+    NA, "Plainte déposée", NA, NA, NA,
+    NA, NA, "En enquête", NA, "En enquête",
+    NA, "Mis en examen", "Détention provisoire", NA, "En enquête",
+    "En enquête", NA, NA, NA, NA,
+    NA, NA, "Plainte déposée", NA, NA,
+    NA, NA, NA, NA, "Détention provisoire",
+    NA, NA, NA, "En enquête", NA,
+    NA, NA, "Détention provisoire", "En enquête", NA,
+    NA, "En enquête", NA, NA, NA,
+    NA, NA, NA, NA, NA,
+    NA
+  ),
+  conclusion = c(
+    "impunité", NA, NA, "prison", NA,
+    NA, "amende", NA, NA, "condamné",
+    NA, "condamné", "prison", NA, NA,
+    NA, NA, NA, NA, "condamné",
+    NA, NA, NA, NA, NA,
+    NA, NA, NA, NA, NA,
+    NA, NA, NA, NA, "amende",
+    "Sans condamnation (prescription)", NA, NA, NA, NA,
+    NA, NA, NA, NA, NA,
+    NA, "10 ans de prison", NA, NA, "17 ans de prison",
+    NA, NA, NA, NA, NA,
+    NA, "5 ans de prison", NA, NA, NA,
+    NA, NA, NA, NA, NA,
+    NA, NA, NA, NA, "3 ans de prison",
+    NA, NA, NA, NA, NA,
+    NA, NA, NA, NA, NA,
+    "condamné"
+  ),
+  stringsAsFactors = FALSE
+)
+
+
+# ─────────────────────────────────────────────
+# 4. CALCUL DES MONTANTS EN EUROS
+# ─────────────────────────────────────────────
+cas <- cas %>%
+  mutate(
+    montant_eur = montant_clp / TAUX_CLP_EUR,
+    montant_eur_fmt = case_when(
+      is.na(montant_eur)          ~ "Inconnu",
+      montant_eur >= 1e9          ~ paste0(round(montant_eur/1e9, 2), " Md €"),
+      montant_eur >= 1e6          ~ paste0(round(montant_eur/1e6, 2), " M€"),
+      montant_eur >= 1e3          ~ paste0(round(montant_eur/1e3), " k€"),
+      TRUE                        ~ paste0(round(montant_eur), " €")
+    ),
+    montant_clp_fmt = case_when(
+      is.na(montant_clp) ~ "Inconnu",
+      TRUE ~ paste0(format(round(montant_clp/1e6), big.mark=" "), " M CLP")
+    )
+  )
+
+
+# ─────────────────────────────────────────────
+# 5. JOINTURE AVEC LES COORDONNÉES + JITTER
+# ─────────────────────────────────────────────
+cas_geo <- cas %>%
+  filter(!is.na(commune)) %>%
+  left_join(coords, by = "commune") %>%
+  filter(!is.na(lat))
+
+# Jitter pour éviter la superposition des marqueurs dans la même commune
+set.seed(42)
+cas_geo <- cas_geo %>%
+  group_by(commune) %>%
+  mutate(
+    n_commune = n(),
+    idx       = row_number(),
+    angle     = (idx / n_commune) * 2 * pi,
+    jitter    = ifelse(n_commune > 1, 0.02 + idx * 0.008, 0),
+    lat_j     = lat + sin(angle) * jitter,
+    lng_j     = lng + cos(angle) * jitter
+  ) %>%
+  ungroup()
+
+
+# ─────────────────────────────────────────────
+# 6. COULEURS PAR BORD POLITIQUE
+# ─────────────────────────────────────────────
+couleur_bord <- function(bord) {
+  dplyr::case_when(
+    bord == "Droite"  ~ "#e74c3c",
+    bord == "Gauche"  ~ "#3498db",
+    bord == "Centre"  ~ "#f39c12",
+    bord == "Aucun"   ~ "#9b59b6",
+    TRUE              ~ "#7f8c8d"
+  )
+}
+
+cas_geo <- cas_geo %>%
+  mutate(couleur = couleur_bord(bord))
+
+
+# ─────────────────────────────────────────────
+# 7. RAYON DES CERCLES (proportionnel au montant)
+# ─────────────────────────────────────────────
+rayon_cercle <- function(eur) {
+  dplyr::case_when(
+    is.na(eur)        ~ 6,
+    eur < 50000       ~ 6,
+    eur < 500000      ~ 10,
+    eur < 2000000     ~ 16,
+    eur < 15000000    ~ 24,
+    eur < 50000000    ~ 36,
+    TRUE              ~ 48
+  )
+}
+
+cas_geo <- cas_geo %>%
+  mutate(rayon = rayon_cercle(montant_eur))
+
+
+# ─────────────────────────────────────────────
+# 8. CONSTRUCTION DES POPUPS HTML
+# ─────────────────────────────────────────────
+construire_popup <- function(df) {
+  mapply(function(affaire, annee, commune, montant_eur_fmt, montant_clp_fmt,
+                  bord, parti, poste, responsable, delits, etat, conclusion) {
+
+    badge_bord  <- if (!is.na(bord)  && bord  != "NA") sprintf('<span style="background:#1a1a26;border:1px solid #ffaa00;color:#ffaa00;padding:2px 8px;border-radius:10px;font-size:9px;text-transform:uppercase">%s</span>', bord)  else ""
+    badge_parti <- if (!is.na(parti) && parti != "NA") sprintf('<span style="background:#1a1a26;border:1px solid #00d4aa;color:#00d4aa;padding:2px 8px;border-radius:10px;font-size:9px;text-transform:uppercase">%s</span>', parti) else ""
+    badge_poste <- if (!is.na(poste) && poste != "NA") sprintf('<span style="background:#1a1a26;border:1px solid #2a2a3a;color:#e8e8f0;padding:2px 8px;border-radius:10px;font-size:9px;text-transform:uppercase">%s</span>', poste) else ""
+
+    resp_html <- if (!is.na(responsable) && responsable != "Inconnu")
+      sprintf('<p style="font-size:10px;color:#6b6b8a;margin:0 0 6px"><strong style="color:#e8e8f0">Responsable :</strong> %s</p>', responsable) else ""
+
+    delit_html <- if (!is.na(delits))
+      sprintf('<p style="font-size:10px;color:#6b6b8a;margin:0 0 6px"><strong style="color:#e8e8f0">Délits :</strong><br>%s</p>', delits) else ""
+
+    statut <- dplyr::coalesce(conclusion, etat)
+    statut_html <- if (!is.na(statut))
+      sprintf('<div style="background:#1a1a26;padding:6px 10px;border-radius:4px;font-size:9px;border-left:3px solid #ff3c3c;margin-top:6px;color:#e8e8f0">%s %s</div>',
+              ifelse(!is.na(conclusion), "⚖️", "🔍"), statut) else ""
+
+    sprintf('
+<div style="background:#12121a;color:#e8e8f0;font-family:monospace;padding:16px;min-width:260px;max-width:300px;">
+  <p style="font-size:9px;text-transform:uppercase;letter-spacing:.15em;color:#6b6b8a;margin:0 0 4px">📅 %d · %s</p>
+  <p style="font-family:sans-serif;font-size:14px;font-weight:800;color:#e8e8f0;margin:0 0 6px;line-height:1.2">%s</p>
+  <p style="font-family:sans-serif;font-size:20px;font-weight:800;color:#ff3c3c;margin:0 2px 0">%s</p>
+  <p style="font-size:9px;color:#6b6b8a;margin:0 0 10px">≈ %s</p>
+  <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:10px">%s%s%s</div>
+  %s%s%s
+</div>',
+      annee, commune, affaire, montant_eur_fmt, montant_clp_fmt,
+      badge_bord, badge_parti, badge_poste,
+      resp_html, delit_html, statut_html
+    )
+  },
+  df$affaire, df$annee, df$commune, df$montant_eur_fmt, df$montant_clp_fmt,
+  df$bord, df$parti, df$poste, df$responsable, df$delits, df$etat, df$conclusion,
+  SIMPLIFY = TRUE)
+}
+
+cas_geo <- cas_geo %>%
+  mutate(popup_html = construire_popup(cas_geo))
+
+
+# ─────────────────────────────────────────────
+# 9. LÉGENDE HTML PERSONNALISÉE
+# ─────────────────────────────────────────────
+legende_html <- HTML('
+<div style="background:#12121a;border:1px solid #2a2a3a;padding:12px 16px;border-radius:8px;font-family:monospace;font-size:9px;color:#e8e8f0;max-width:200px">
+  <p style="font-size:10px;text-transform:uppercase;letter-spacing:.1em;color:#6b6b8a;margin:0 0 10px;font-family:sans-serif;font-weight:700">Montant de l\'affaire</p>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div style="width:10px;height:10px;border-radius:50%;background:rgba(255,60,60,.5);border:2px solid rgba(255,255,255,.3);flex-shrink:0"></div>Moins de 100 000 €</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div style="width:16px;height:16px;border-radius:50%;background:rgba(255,60,60,.6);border:2px solid rgba(255,255,255,.3);flex-shrink:0"></div>100k€ – 1 M€</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><div style="width:24px;height:24px;border-radius:50%;background:rgba(255,60,60,.7);border:2px solid rgba(255,255,255,.3);flex-shrink:0"></div>1 M€ – 10 M€</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px"><div style="width:34px;height:34px;border-radius:50%;background:rgba(255,60,60,.8);border:2px solid rgba(255,255,255,.3);flex-shrink:0"></div>Plus de 10 M€</div>
+  <div style="border-top:1px solid #2a2a3a;padding-top:10px">
+    <p style="font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:#6b6b8a;margin:0 0 8px;font-family:sans-serif;font-weight:700">Bord politique</p>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><div style="width:8px;height:8px;border-radius:50%;background:#3498db;flex-shrink:0"></div>Gauche</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><div style="width:8px;height:8px;border-radius:50%;background:#e74c3c;flex-shrink:0"></div>Droite</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px"><div style="width:8px;height:8px;border-radius:50%;background:#f39c12;flex-shrink:0"></div>Centre</div>
+    <div style="display:flex;align-items:center;gap:6px"><div style="width:8px;height:8px;border-radius:50%;background:#9b59b6;flex-shrink:0"></div>Aucun</div>
+  </div>
+  <div style="border-top:1px solid #2a2a3a;padding-top:10px;margin-top:8px;color:#ffaa00;font-size:8px">
+    Taux : 1 € = 1 050 CLP
+  </div>
+</div>
+')
+
+
+# ─────────────────────────────────────────────
+# 10. CONSTRUCTION DE LA CARTE LEAFLET
+# ─────────────────────────────────────────────
+carte <- leaflet(cas_geo,
+                 options = leafletOptions(zoomControl = TRUE)) %>%
+
+  # Fond de carte sombre CartoDB
+  addProviderTiles(
+    providers$CartoDB.DarkMatter,
+    options = tileOptions(opacity = 1)
+  ) %>%
+
+  # Centrage initial sur le Chili
+  setView(lng = -70.6, lat = -33.5, zoom = 5) %>%
+
+  # ── Couche : Toutes les affaires ──────────────────────────────────
+  addCircleMarkers(
+    data        = cas_geo,
+    lng         = ~lng_j,
+    lat         = ~lat_j,
+    radius      = ~rayon,
+    fillColor   = ~couleur,
+    color       = "rgba(255,255,255,0.35)",
+    weight      = 1.5,
+    fillOpacity = 0.75,
+    popup       = ~popup_html,
+    popupOptions = popupOptions(
+      maxWidth  = 320,
+      className = "custom-popup"
+    ),
+    group       = "Toutes les affaires",
+    label       = ~paste0(affaire, " (", montant_eur_fmt, ")"),
+    labelOptions = labelOptions(
+      style     = list(
+        "background"   = "#12121a",
+        "color"        = "#e8e8f0",
+        "border"       = "1px solid #2a2a3a",
+        "border-radius"= "4px",
+        "font-family"  = "monospace",
+        "font-size"    = "11px",
+        "padding"      = "4px 8px"
+      ),
+      noHide    = FALSE,
+      direction = "top"
+    )
+  ) %>%
+
+  # ── Couche : Droite uniquement ────────────────────────────────────
+  addCircleMarkers(
+    data        = cas_geo %>% filter(bord == "Droite"),
+    lng         = ~lng_j, lat = ~lat_j,
+    radius      = ~rayon,
+    fillColor   = "#e74c3c", color = "white", weight = 1.5, fillOpacity = 0.8,
+    popup       = ~popup_html,
+    group       = "Droite",
+    label       = ~paste0(affaire, " (", montant_eur_fmt, ")")
+  ) %>%
+
+  # ── Couche : Gauche uniquement ────────────────────────────────────
+  addCircleMarkers(
+    data        = cas_geo %>% filter(bord == "Gauche"),
+    lng         = ~lng_j, lat = ~lat_j,
+    radius      = ~rayon,
+    fillColor   = "#3498db", color = "white", weight = 1.5, fillOpacity = 0.8,
+    popup       = ~popup_html,
+    group       = "Gauche",
+    label       = ~paste0(affaire, " (", montant_eur_fmt, ")")
+  ) %>%
+
+  # ── Couche : Centre uniquement ────────────────────────────────────
+  addCircleMarkers(
+    data        = cas_geo %>% filter(bord == "Centre"),
+    lng         = ~lng_j, lat = ~lat_j,
+    radius      = ~rayon,
+    fillColor   = "#f39c12", color = "white", weight = 1.5, fillOpacity = 0.8,
+    popup       = ~popup_html,
+    group       = "Centre",
+    label       = ~paste0(affaire, " (", montant_eur_fmt, ")")
+  ) %>%
+
+  # ── Couche : Fondations ───────────────────────────────────────────
+  addCircleMarkers(
+    data        = cas_geo %>% filter(poste == "Fondation"),
+    lng         = ~lng_j, lat = ~lat_j,
+    radius      = ~rayon,
+    fillColor   = ~couleur, color = "#ffffff", weight = 2.5, fillOpacity = 0.9,
+    popup       = ~popup_html,
+    group       = "Fondations",
+    label       = ~paste0(affaire, " (", montant_eur_fmt, ")")
+  ) %>%
+
+  # ── Couche : Mairies ──────────────────────────────────────────────
+  addCircleMarkers(
+    data        = cas_geo %>% filter(poste == "Maire"),
+    lng         = ~lng_j, lat = ~lat_j,
+    radius      = ~rayon,
+    fillColor   = ~couleur, color = "#ffaa00", weight = 2, fillOpacity = 0.85,
+    popup       = ~popup_html,
+    group       = "Mairies",
+    label       = ~paste0(affaire, " (", montant_eur_fmt, ")")
+  ) %>%
+
+  # ── Couche : FFAA / Police ────────────────────────────────────────
+  addCircleMarkers(
+    data        = cas_geo %>% filter(poste %in% c("Carabiniers","Armée","Police judiciaire")),
+    lng         = ~lng_j, lat = ~lat_j,
+    radius      = ~rayon,
+    fillColor   = "#9b59b6", color = "white", weight = 2, fillOpacity = 0.85,
+    popup       = ~popup_html,
+    group       = "FFAA / Police",
+    label       = ~paste0(affaire, " (", montant_eur_fmt, ")")
+  ) %>%
+
+  # ── Contrôle des couches ──────────────────────────────────────────
+  addLayersControl(
+    baseGroups   = c("Toutes les affaires", "Droite", "Gauche", "Centre"),
+    overlayGroups = c("Fondations", "Mairies", "FFAA / Police"),
+    options      = layersControlOptions(collapsed = FALSE),
+    position     = "topright"
+  ) %>%
+
+  # ── Légende personnalisée ─────────────────────────────────────────
+  addControl(
+    html     = legende_html,
+    position = "bottomleft"
+  ) %>%
+
+  # ── Titre ─────────────────────────────────────────────────────────
+  addControl(
+    html = HTML('
+<div style="background:linear-gradient(135deg,rgba(10,10,15,.97),rgba(18,18,26,.95));
+            border:1px solid #2a2a3a;border-radius:8px;padding:14px 18px;
+            font-family:monospace;max-width:340px">
+  <h2 style="font-family:sans-serif;font-size:20px;font-weight:800;color:#e8e8f0;
+             margin:0 0 4px;letter-spacing:-.02em">
+    🇨🇱 Carte de la <span style="color:#ff3c3c">Corruption</span> au Chili
+  </h2>
+  <p style="font-size:9px;color:#6b6b8a;margin:0;text-transform:uppercase;letter-spacing:.1em">
+    81 affaires géolocalisées · 1989–2024 · Montants en euros
+  </p>
+</div>'),
+    position = "topleft"
+  ) %>%
+
+  # ── CSS personnalisé pour les popups ──────────────────────────────
+  htmlwidgets::onRender("
+    function(el, x) {
+      // Style des popups
+      var style = document.createElement('style');
+      style.textContent = `
+        .custom-popup .leaflet-popup-content-wrapper {
+          background: #12121a !important;
+          border: 1px solid #2a2a3a !important;
+          border-radius: 8px !important;
+          box-shadow: 0 20px 60px rgba(0,0,0,.85) !important;
+          padding: 0 !important;
+          color: #e8e8f0;
+        }
+        .custom-popup .leaflet-popup-tip {
+          background: #12121a !important;
+        }
+        .custom-popup .leaflet-popup-content {
+          margin: 0 !important;
+        }
+        .leaflet-popup-close-button {
+          color: #6b6b8a !important;
+          font-size: 18px !important;
+          padding: 4px 8px !important;
+        }
+        .leaflet-control-layers {
+          background: #12121a !important;
+          border: 1px solid #2a2a3a !important;
+          color: #e8e8f0 !important;
+          font-family: monospace !important;
+          font-size: 11px !important;
+          border-radius: 8px !important;
+        }
+        .leaflet-control-layers label {
+          color: #e8e8f0 !important;
+        }
+        .leaflet-control-layers-separator {
+          border-top: 1px solid #2a2a3a !important;
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  ")
+
+
+# ─────────────────────────────────────────────
+# 11. AFFICHAGE ET EXPORT
+# ─────────────────────────────────────────────
+
+# Afficher la carte dans le viewer RStudio / navigateur
+print(carte)
+
+# Exporter en fichier HTML autonome
+htmlwidgets::saveWidget(
+  widget   = carte,
+  file     = "carte_corruption_chili_FR.html",
+  selfcontained = TRUE,
+  title    = "Carte de la Corruption au Chili"
+)
+
+message("✅ Carte exportée : carte_corruption_chili_FR.html")
+
+
+# ─────────────────────────────────────────────
+# 12. STATISTIQUES RAPIDES (console)
+# ─────────────────────────────────────────────
+cat("\n══════════════════════════════════════\n")
+cat("  STATISTIQUES GÉNÉRALES\n")
+cat("══════════════════════════════════════\n")
+cat(sprintf("  Affaires totales        : %d\n", nrow(cas)))
+cat(sprintf("  Affaires géolocalisées  : %d\n", nrow(cas_geo)))
+cat(sprintf("  Communes touchées       : %d\n", length(unique(cas_geo$commune))))
+total_eur <- sum(cas$montant_eur, na.rm = TRUE)
+cat(sprintf("  Montant total (estimé)  : %.1f Md €\n", total_eur / 1e9))
+cat("──────────────────────────────────────\n")
+cat("  PAR BORD POLITIQUE\n")
+cat("──────────────────────────────────────\n")
+bord_stats <- cas %>%
+  group_by(bord) %>%
+  summarise(
+    n       = n(),
+    total   = sum(montant_eur, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  arrange(desc(total))
+for (i in seq_len(nrow(bord_stats))) {
+  cat(sprintf("  %-10s : %2d affaires · %.1f M€\n",
+              bord_stats$bord[i], bord_stats$n[i], bord_stats$total[i]/1e6))
+}
+cat("══════════════════════════════════════\n")
