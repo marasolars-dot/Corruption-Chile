@@ -1,0 +1,760 @@
+# este script lee el excel con los datos, los limpia y los guarda en otros formatos para usarlos en la app
+# hay que ejecutarlo cada vez que se guardan datos nuevos en la planilla de datos, para que lleguen a la app
+
+
+git config --global user.name "MaraSolar"
+git config --global user.email "ton.email@example.com"
+
+cd chemin/vers/corrupcion-chile
+
+git init
+
+######
+names(corrupcion)
+summary(corrupcion)
+
+
+install.packages(c(
+  "dplyr",
+  "ggplot2",
+  "stringr",
+  "tidyr",
+  "forcats"
+))
+
+
+#Packages 
+library(dplyr)
+library(ggplot2)
+library(stringr)
+library(tidyr)
+library(forcats)
+library(readxl)
+library(stringr)
+
+
+install.packages(c("tidyverse", "readxl"))
+
+options(timeout = 300)
+options(scipen = 9999) #À empêcher R d’afficher les nombres en notation scientifique
+
+
+#cargar ----
+#cargar base de datos de casos de corrupción en chile
+corrupcion_0 <- readxl::read_excel("C:/Users/Rémi Maucolot/Downloads/casos_corrupcion_chile.xlsx")
+
+
+#limpiar ----
+corrupcion <- corrupcion_0 |> 
+  janitor::clean_names() |> 
+  rename(año = ano) |> 
+  #excluir casos sin fuentes
+  filter(!is.na(fuente1) & fuente1 != "") |> 
+  # excluir casos absueltos
+  filter(is.na(conclusion) | !conclusion %in% c("absuelta", "absuelto")) |> 
+  # excluir casos con información insuficiente
+  filter(!(is.na(monto) & is.na(responsable))) |> 
+  #convertir monto a numérico
+  mutate(monto = str_remove_all(monto, "\\."),
+         monto = as.numeric(monto)) |> 
+  #ordenar casos en base al monto
+  mutate(caso = as.factor(caso),
+         caso = forcats::fct_reorder(caso, monto)) |> 
+  rowwise() |> 
+  #variables nuevas para visualizador
+  mutate(partido = ifelse(partido == "" | is.na(partido), "Ninguno", partido),
+         caso_fundaciones = ifelse(!is.na(fundacion), "Caso fundaciones", "Otros casos"),
+         alcalde = ifelse(posicion %in% c("Alcalde", "Alcaldesa", "Municipio"), "Alcaldías", "Otros casos"),
+         alcalde = replace_na(alcalde, "Otros casos"),
+         perjudicado = ifelse(perjudicado == "" | is.na(perjudicado), "Otros", perjudicado),
+  ) |> 
+  ungroup() |> 
+  #otros
+  mutate(sector = replace_na(sector, "Ninguno"),
+         partido = replace_na(partido, "Ninguno"),
+         delitos = str_to_sentence(delitos)
+  ) |> 
+  # variable de texto para búsquedas
+  mutate(texto = paste(caso, responsable, partido, sector, fundacion, posicion, comuna, delitos),
+         texto = tolower(texto))
+
+corrupcion |> tail()
+corrupcion |> count(fundacion, caso_fundaciones)
+
+## guardar ----
+readr::write_rds(corrupcion, "app/corrupcion_datos.rds")
+getwd()
+
+# dividir montos grandes ----
+# browser()
+# mean(corrupcion$monto)
+# median(corrupcion$monto)
+
+# cantidad_circulos = 15
+# corte_enormes = 30000 #millones
+# divisor_montos_enormes = 3 #cantidad de columnas en montos enormes
+cantidad_circulos = 25 #15
+corte_enormes = 10000 #millones
+corte_ultra = 50000
+divisor_montos_enormes = 3 #cantidad de columnas en montos enormes
+
+corrupcion_dividido <- corrupcion |>
+  arrange(desc(monto)) |> 
+  #identificar si los montos de los mayores casos son enormes en comparación con el resto
+  select(caso, monto) |> 
+  mutate(magnitud = case_when(monto >= corte_ultra*1000000 ~ "ultra",
+                              monto >= corte_enormes*1000000 ~ "enorme",
+                              .default = "normal")) |> 
+  #dividir los montos grandes en tres partes iguales, los normales dejarlos como están
+  group_by(caso) |> 
+  # mutate(monto1 = ifelse(magnitud == "enorme", monto/divisor_montos_enormes, monto),
+  #        monto2 = ifelse(magnitud == "enorme", monto/divisor_montos_enormes, NA),
+  #        monto3 = ifelse(magnitud == "enorme", monto/divisor_montos_enormes, NA),
+  # ) |>
+  mutate(monto1 = ifelse(magnitud == "enorme", (monto/10)*2, monto),
+         monto2 = ifelse(magnitud == "enorme", (monto/10)*3, NA),
+         monto3 = ifelse(magnitud == "enorme", (monto/10)*5, NA),
+  ) |>
+  mutate(monto1 = ifelse(magnitud == "ultra", (monto/10)*1, monto1),
+         monto2 = ifelse(magnitud == "ultra", (monto/10)*1.5, monto2),
+         monto3 = ifelse(magnitud == "ultra", (monto/10)*2, monto3),
+         monto4 = ifelse(magnitud == "ultra", (monto/10)*2.5, NA),
+         monto5 = ifelse(magnitud == "ultra", (monto/10)*3, NA),
+  ) |>
+  # mutate(monto1 = ifelse(magnitud == "ultra", (monto/10)*(0.357*1), monto1),
+  #        monto2 = ifelse(magnitud == "ultra", (monto/10)*(0.357*2), monto2),
+  #        monto3 = ifelse(magnitud == "ultra", (monto/10)*(0.357*3), monto3),
+  #        monto4 = ifelse(magnitud == "ultra", (monto/10)*(0.357*4), NA),
+  #        monto5 = ifelse(magnitud == "ultra", (monto/10)*(0.357*5), NA),
+  #        monto6 = ifelse(magnitud == "ultra", (monto/10)*(0.357*6), NA),
+  #        monto7 = ifelse(magnitud == "ultra", (monto/10)*(0.357*7), NA),
+  # ) |>
+  select(-monto) |> 
+  pivot_longer(cols = starts_with("monto"), names_to = "division_monto", values_to = "monto_dividido") |> 
+  filter(!is.na(monto_dividido))
+
+#escalar datos de 1 a 15, donde el monto maximo es 15
+corrupcion_dividido_escalado <- corrupcion_dividido |> 
+  ungroup() |> 
+  mutate(x = monto_dividido,
+         monto_escalado = (x - min(x)) / (max(x) - min(x)) * cantidad_circulos,
+         monto_escalado = ceiling(monto_escalado)) |> 
+  select(-x)
+
+#el gráfico de pictogramas se basa en que una imagen se repita representando varias partes del valor total,
+#por lo tanto hay que hacer una "escalera" de datos hasta llegar al valor escalado, 
+#es decir, si el valor es 4, hay qe crear filas que sean 4, 3, 2, 1.
+corrupcion_dividido_escalado_escalera <- corrupcion_dividido_escalado |> 
+  #repetir las filas en base a el valor escalado; es decir, si el monto escalado es 4, crear 4 filas iguales
+  tidyr::uncount(monto_escalado, .remove = FALSE) |> 
+  #hacer que las filas iguales sean una sucesión de numeros decreciente; es decir, convertir 4 4 4 4 en 4 3 2 1
+  group_by(caso, division_monto) |> 
+  mutate(posicion = 1:n(), #hacer un 1 2 3 4 en cada grupo
+         posicion = posicion - 1, #hacer un 0 1 2 3 en cada grupo
+         monto_escalera = monto_escalado - posicion) |> 
+  ungroup() |> 
+  select(-posicion)
+
+corrupcion_escalado_0 <- corrupcion_dividido_escalado_escalera |> 
+  #volver a incluir el monto original de cada caso como una nueva columna
+  left_join(corrupcion |> 
+              select(caso, monto, sector, año, partido, perjudicado, alcalde, caso_fundaciones), 
+            join_by(caso)) |> 
+  #crear una variable que sirva como etiqueta (porque los montos son muy largos)
+  mutate(#caso_etiqueta = str_wrap(caso, 40),
+    caso_etiqueta = fct_reorder(caso, monto_escalera)) |> 
+  #como los valores grandes se van a dividir en 3 columnas, no queremos tener 3 etiquetas iguales, por lo que hacemos que solo sea visible la del medio, y la ordenamos para que quede en el medio
+  mutate(division_monto_n = str_remove(division_monto, "monto") |> as.integer()) |> 
+  mutate(caso_central = case_when(magnitud == "ultra" & division_monto == "monto3" ~ as.character(caso_etiqueta),
+                                  magnitud == "enorme" & division_monto == "monto2" ~ as.character(caso_etiqueta),
+                                  magnitud == "normal" ~ as.character(caso_etiqueta), 
+                                  .default = "")) |> 
+  mutate(division_monto_etiqueta = paste(caso_central, division_monto_n),
+         division_monto_etiqueta = fct_reorder(division_monto_etiqueta, division_monto_n)) |> 
+  #convertir monto total a una etiqueta
+  mutate(monto_etiqueta = as.integer(monto/1000000),
+         monto_etiqueta = format(monto_etiqueta, big.mark = ".", decimal.mark = ","),
+         monto_etiqueta = paste(monto_etiqueta, "millones")) |> 
+  ungroup() |> 
+  mutate(ninguno = "ninguno") #variable falsa para desagrupar todos los casos en el gráfico
+
+# View(corrupcion_dividido_escalado_escalera)
+
+
+## guardar ----
+readr::write_rds(corrupcion_escalado_0, "app/corrupcion_datos_escalados.rds")
+
+
+
+# datos cep ----
+cep <- readxl::read_excel("datos/CEP_datos_percepcion_1_a_total_(1994-2023).xlsx") |> 
+  janitor::clean_names() |> 
+  mutate(variable = stringr::str_wrap(variable, 20)) |> 
+  mutate(año = lubridate::year(fecha))
+
+readr::write_rds(cep, "app/cep_corrupcion.rds")
+
+
+
+# datos índice de percepciones de corrupción ----
+# https://www.transparency.org/en/cpi/2023/index/chl
+
+cpi <- readxl::read_excel("datos/corruption_perception_index_chile.xlsx")
+
+cpi2 <- cpi |> 
+  mutate(cambio = case_when(lag(cpi) > cpi ~ "baja", 
+                            lag(cpi) == cpi ~ "igual",
+                            lag(cpi) < cpi ~ "sube"),
+         cambio = ifelse(is.na(cambio), "igual", cambio))
+
+readr::write_rds(cpi2, "app/corruption_perception_index_chile.rds")
+
+#Plots
+
+#Distribution des montants de corruption
+
+library(ggplot2)
+library(scales)
+ggplot(corrupcion, aes(x = monto)) +
+  geom_histogram(bins = 30, fill = "violet") +
+  scale_x_log10() +  # log si grande différence d'échelles
+  labs(title = "Distribution des montants de corruption")
+
+#Alternative plot
+
+# Graphique amélioré
+ggplot(corrupcion, aes(x = monto)) +
+  # Histogramme avec contours pour meilleure lisibilité
+  geom_histogram(bins = 30, 
+                 fill = "#7B68EE",      # Bleu-violet plus professionnel
+                 color = "white",        # Bordures blanches
+                 alpha = 0.8) +          # Légère transparence
+  
+  # Échelle logarithmique avec formatage monétaire
+  scale_x_log10(
+    labels = label_dollar(prefix = "", suffix = " €", big.mark = " "),
+    breaks = scales::trans_breaks("log10", function(x) 10^x)
+  ) +
+  
+  # Amélioration de l'échelle Y
+  scale_y_continuous(
+    labels = label_comma(big.mark = " "),
+    expand = expansion(mult = c(0, 0.05))  # Commence à 0
+  ) +
+  
+  # Ajout de lignes de référence (médiane et moyenne)
+  geom_vline(aes(xintercept = median(monto, na.rm = TRUE)),
+             color = "#FF6B6B", 
+             linetype = "dashed", 
+             linewidth = 1,
+             alpha = 0.7) +
+  geom_vline(aes(xintercept = mean(monto, na.rm = TRUE)),
+             color = "#4ECDC4", 
+             linetype = "dashed", 
+             linewidth = 1,
+             alpha = 0.7) +
+  
+  # Annotations pour les lignes de référence
+  annotate("text", 
+           x = median(corrupcion$monto, na.rm = TRUE) * 1.5,
+           y = Inf, 
+           label = "Médiane", 
+           color = "#FF6B6B", 
+           vjust = 2, 
+           hjust = 0,
+           fontface = "bold",
+           size = 3.5) +
+  annotate("text", 
+           x = mean(corrupcion$monto, na.rm = TRUE) * 1.5,
+           y = Inf, 
+           label = "Moyenne", 
+           color = "#4ECDC4", 
+           vjust = 4, 
+           hjust = 0,
+           fontface = "bold",
+           size = 3.5) +
+  
+  # Titres et étiquettes améliorés
+  labs(
+    title = "Distribution des montants de corruption",
+    subtitle = "Échelle logarithmique pour mieux visualiser les différents ordres de grandeur",
+    x = "Montant (échelle logarithmique)",
+    y = "Nombre de cas",
+    caption = "Note : L'échelle logarithmique permet de comparer des montants très différents"
+  ) +
+  
+  # Thème professionnel et épuré
+  theme_minimal(base_size = 12) +
+  theme(
+    # Titres
+    plot.title = element_text(size = 16, face = "bold", hjust = 0, margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 11, color = "grey40", hjust = 0, margin = margin(b = 15)),
+    plot.caption = element_text(size = 9, color = "grey50", hjust = 0, margin = margin(t = 10)),
+    
+    # Axes
+    axis.title = element_text(size = 11, face = "bold"),
+    axis.text = element_text(size = 10),
+    axis.title.y = element_text(margin = margin(r = 10)),
+    axis.title.x = element_text(margin = margin(t = 10)),
+    
+    # Grille
+    panel.grid.minor = element_blank(),
+    panel.grid.major.x = element_line(color = "grey90", linewidth = 0.3),
+    panel.grid.major.y = element_line(color = "grey90", linewidth = 0.3),
+    
+    # Fond
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    
+    # Marges
+    plot.margin = margin(15, 15, 15, 15)
+  )
+
+##########################
+#alternative chatgpt
+#Graphique: Distribution des montants de corruption
+
+library(ggplot2)
+library(scales)
+
+ggplot(corrupcion, aes(x = monto)) +
+  # Histogramme
+  geom_histogram(bins = 30, 
+                 fill = "#7B68EE",
+                 color = "white",
+                 alpha = 0.8) +
+  
+  # Échelle logarithmique avec format monétaire
+  scale_x_log10(
+    labels = label_number(
+      accuracy = 1,
+      scale_cut = cut_short_scale(),
+      suffix = " €"
+    ),
+    breaks = scales::trans_breaks("log10", function(x) 10^x)
+  ) +
+  
+  # Axe Y simplifié
+  scale_y_continuous(
+    labels = label_number(
+      accuracy = 1,
+      scale_cut = cut_short_scale()
+    ),
+    expand = expansion(mult = c(0, 0.05))
+  ) +
+  
+  # Lignes moyenne et médiane
+  geom_vline(xintercept = median(corrupcion$monto, na.rm = TRUE),
+             color = "#FF6B6B", linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = mean(corrupcion$monto, na.rm = TRUE),
+             color = "#4ECDC4", linetype = "dashed", linewidth = 1) +
+  
+  # Annotations avec annotate()
+  annotate("text", 
+           x = median(corrupcion$monto, na.rm = TRUE), 
+           y = max(ggplot_build(ggplot(corrupcion, aes(x=monto)) +
+                                  geom_histogram(bins=30))$data[[1]]$count) * 0.9,
+           label = "Médiane", 
+           color = "#FF6B6B", fontface = "bold", hjust = 0.5, vjust = -0.5) +
+  annotate("text", 
+           x = mean(corrupcion$monto, na.rm = TRUE), 
+           y = max(ggplot_build(ggplot(corrupcion, aes(x=monto)) +
+                                  geom_histogram(bins=30))$data[[1]]$count) * 0.9,
+           label = "Moyenne", 
+           color = "#4ECDC4", fontface = "bold", hjust = 0.5, vjust = -0.5) +
+  
+  # Titres
+  labs(
+    title = "Distribution des montants de corruption",
+    subtitle = "Échelle logarithmique pour comparer les différents ordres de grandeur",
+    x = "Montant (log scale)",
+    y = "Nombre de cas",
+    caption = "Note : Les valeurs extrêmes sont mieux visualisées sur une échelle logarithmique"
+  ) +
+  
+  # Thème épuré
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0, margin = margin(b = 5)),
+    plot.subtitle = element_text(size = 11, color = "grey40", hjust = 0, margin = margin(b = 15)),
+    plot.caption = element_text(size = 9, color = "grey50", hjust = 0, margin = margin(t = 10)),
+    axis.title = element_text(size = 11, face = "bold"),
+    axis.text = element_text(size = 10),
+    panel.grid.minor = element_blank(),
+    panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
+    plot.background = element_rect(fill = "white", color = NA),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.margin = margin(15, 15, 15, 15)
+  )
+
+
+#########
+#Graphique sur le nombre d'affaires de corruption par année
+library(ggplot2)
+
+ggplot(corrupcion, aes(x = factor(año))) +  # factor pour que les années soient catégorielles
+  geom_bar(fill = "red", color = "white", alpha = 0.9) +
+  
+  # Ajouter les nombres au-dessus des barres
+  geom_text(stat = "count", aes(label = ..count..), vjust = -0.5, size = 3.5, color = "black") +
+  
+  # Titres et axes
+  labs(
+    title = "Nombre d'affaires de corruption par année",
+    x = "Année",
+    y = "Nombre d'affaires",
+    caption = "Source : Base de données de corruption"
+  ) +
+  
+  # Amélioration des axes
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5, margin = margin(b = 10)),
+    axis.title = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10, angle = 45, hjust = 1),  # rotation si beaucoup d'années
+    panel.grid.major.x = element_blank(),  # moins de distractions
+    panel.grid.minor = element_blank()
+  )
+
+
+##################
+# Graphiques attractifs pour dataset corruption
+# 0. Packages ---------------------------------------------------------------
+
+library(tidyverse)
+library(ggthemes)
+library(scales)
+library(ggrepel)       # pour labels non chevauchants
+library(treemapify)
+install.packages("wordcloud2")
+library(wordcloud2)
+install.packages("ggraph")
+library(ggraph)
+library(igraph)
+
+# Assurez-vous que votre dataframe s'appelle "corrupcion"
+# Corrigeons quelques colonnes si nécessaire
+corrupcion$monto <- as.numeric(corrupcion$monto)
+corrupcion$año <- as.numeric(corrupcion$año)
+
+# ===========================================
+# Histogramme et Boxplot des montants
+
+# Histogramme log pour bien visualiser les grandes valeurs
+ggplot(corrupcion, aes(x = monto)) +
+  geom_histogram(fill = "#FF6F61", color = "white", bins = 30) +
+  scale_x_log10(labels = scales::dollar_format(prefix = "$")) +
+  labs(title = "Distribution des montants de corruption",
+       x = "Montant (log10)", y = "Nombre de cas") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 14))
+
+#Version amelioré
+library(ggplot2)
+library(scales)
+
+# Calcul des stats
+moyenne <- mean(corrupcion$monto, na.rm = TRUE)
+mediane <- median(corrupcion$monto, na.rm = TRUE)
+
+ggplot(corrupcion, aes(x = monto)) +
+  geom_histogram(fill = "#FF6F61", color = "white", bins = 30, alpha = 0.9) +
+  
+  # Échelle logarithmique avec format monétaire clair
+  scale_x_log10(labels = label_number(scale_cut = cut_short_scale(), suffix = " €")) +
+  
+  # Lignes de référence moyenne et médiane
+  geom_vline(xintercept = moyenne, color = "#4ECDC4", linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = mediane, color = "#FF6B6B", linetype = "dashed", linewidth = 1) +
+  
+  # Annotations
+  annotate("text", x = moyenne, y = 5, label = "Moyenne", color = "#4ECDC4", fontface = "bold", vjust = -0.5, hjust = 0.5) +
+  annotate("text", x = mediane, y = 5, label = "Médiane", color = "#FF6B6B", fontface = "bold", vjust = -0.5, hjust = 0.5) +
+  
+  # Titres
+  labs(
+    title = "Distribution des montants de corruption",
+    subtitle = "Échelle logarithmique pour mieux visualiser les grandes valeurs",
+    x = "Montant (log scale)",
+    y = "Nombre de cas",
+    caption = "Les lignes indiquent la moyenne et la médiane"
+  ) +
+  
+  # Thème épuré et agréable
+  theme_minimal(base_size = 12) +
+  theme(
+    plot.title = element_text(face = "bold", size = 16, hjust = 0.5),
+    plot.subtitle = element_text(size = 11, color = "grey40", hjust = 0.5),
+    axis.title = element_text(face = "bold"),
+    axis.text = element_text(size = 10),
+    panel.grid.major = element_line(color = "grey90", linewidth = 0.3),
+    panel.grid.minor = element_blank()
+  )
+
+# Boxplot par secteur
+ggplot(corrupcion, aes(x = sector, y = monto, fill = sector)) +
+  geom_boxplot(alpha = 0.7) +
+  scale_y_log10(labels = scales::dollar_format(prefix = "$")) +
+  labs(title = "Montants de corruption par secteur", x = "Secteur", y = "Montant (log10)") +
+  theme_light() +
+  theme(legend.position = "none", plot.title = element_text(face = "bold"))
+
+# ===========================================
+# 2️⃣ Évolution temporelle
+# ===========================================
+# Nombre de cas par année
+ggplot(corrupcion, aes(x = año)) +
+  geom_bar(fill = "#4C72B0") +
+  scale_x_continuous(breaks = seq(min(corrupcion$año, na.rm=TRUE), max(corrupcion$año, na.rm=TRUE), 2)) +
+  labs(title = "Nombre d'affaires de corruption par année", x = "Année", y = "Nombre de cas") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# Montant total par année
+corrupcion %>% 
+  group_by(año) %>% 
+  summarise(total_monto = sum(monto, na.rm=TRUE)) %>%
+  ggplot(aes(x = año, y = total_monto)) +
+  geom_col(fill = "#F28E2B") +
+  scale_y_continuous(labels = scales::dollar_format(prefix = "$")) +
+  labs(title = "Montant total de corruption par année", x = "Année", y = "Montant total") +
+  theme_minimal()
+
+# ===========================================
+# 3️⃣ Top responsables
+# ===========================================
+top_responsables <- corrupcion %>% 
+  group_by(responsable) %>% 
+  summarise(total_monto = sum(monto, na.rm = TRUE)) %>%
+  arrange(desc(total_monto)) %>%
+  slice(1:10)
+
+ggplot(top_responsables, aes(x = reorder(responsable, total_monto), y = total_monto, fill = total_monto)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_gradient(low = "#FFDDC1", high = "#FF6F61") +
+  scale_y_continuous(labels = scales::dollar_format(prefix = "$")) +
+  labs(title = "Top 10 responsables par montant total", x = "Responsable", y = "Montant total") +
+  theme_minimal()
+
+# ===========================================
+# 4️⃣ Secteur et Parti
+# ===========================================
+# Treemap montant total par secteur
+corrupcion %>% 
+  group_by(sector) %>%
+  summarise(total_monto = sum(monto, na.rm = TRUE)) %>%
+  ggplot(aes(area = total_monto, fill = sector, label = sector)) +
+  geom_treemap() +
+  geom_treemap_text(color = "white", place = "centre", grow = TRUE) +
+  scale_fill_brewer(palette = "Set3") +
+  labs(title = "Montant total de corruption par secteur") +
+  theme(legend.position = "none")
+
+# Heatmap secteur × parti
+corrupcion %>% 
+  group_by(sector, partido) %>% 
+  summarise(total_monto = sum(monto, na.rm=TRUE)) %>% 
+  ggplot(aes(x = partido, y = sector, fill = total_monto)) +
+  geom_tile(color = "white") +
+  scale_fill_gradient(low = "white", high = "#D62728", labels = scales::dollar_format(prefix = "$")) +
+  labs(title = "Montant total de corruption par secteur et parti", x = "Parti", y = "Secteur") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+# ===========================================
+# 5️⃣ Géographie (communes)
+# ===========================================
+# Top 10 communes par montant
+top_comunas <- corrupcion %>% 
+  group_by(comuna) %>% 
+  summarise(total_monto = sum(monto, na.rm=TRUE)) %>% 
+  arrange(desc(total_monto)) %>% 
+  slice(1:10)
+
+ggplot(top_comunas, aes(x = reorder(comuna, total_monto), y = total_monto, fill = total_monto)) +
+  geom_col() +
+  coord_flip() +
+  scale_fill_gradient(low="#A1C9F4", high="#4C72B0") +
+  scale_y_continuous(labels = scales::dollar_format(prefix="$")) +
+  labs(title="Top 10 communes par montant total de corruption", x="Commune", y="Montant total") +
+  theme_minimal() +
+  theme(legend.position="none")
+
+# ===========================================
+# 6️⃣ Wordcloud des délits
+# ===========================================
+# Séparer les délits
+library(stringr)
+delitos <- str_split(corrupcion$delitos, ",") %>% unlist() %>% str_trim()
+delitos_freq <- table(delitos) %>% as.data.frame()
+colnames(delitos_freq) <- c("word", "freq")
+
+wordcloud2(delitos_freq, size = 0.7, color='random-light', backgroundColor = "#333333")
+
+# ===========================================
+# 7️⃣ État / condamnation
+# ===========================================
+corrupcion %>% 
+  group_by(estado, condena) %>% 
+  summarise(n = n()) %>% 
+  ggplot(aes(x = estado, y = n, fill = condena)) +
+  geom_bar(stat="identity", position="stack") +
+  labs(title="État vs Condamnation", x="État", y="Nombre de cas", fill="Condamnation") +
+  theme_minimal()
+
+# ===========================================
+# 8️⃣ Scatter plot avec taille par montant et couleur par parti
+# ===========================================
+ggplot(corrupcion, aes(x = año, y = monto, size = monto, color = partido)) +
+  geom_point(alpha = 0.7) +
+  scale_y_log10(labels = scales::dollar_format(prefix="$")) +
+  scale_size(range = c(3, 12)) +
+  labs(title="Montants par année et parti", x="Année", y="Montant (log10)", size="Montant", color="Parti") +
+  theme_light()
+
+# ===========================================
+# 9️⃣ Réseau des responsables et bénéficiaires
+# ===========================================
+# On ne fait qu’un exemple simple pour illustrer
+edges <- corrupcion %>% 
+  filter(!is.na(responsable) & !is.na(beneficiado)) %>%
+  select(responsable, beneficiado) %>%
+  distinct()
+
+g <- graph_from_data_frame(edges, directed = TRUE)
+
+ggraph(g, layout = "fr") +
+  geom_edge_link(alpha=0.5, arrow = arrow(length = unit(4, 'mm')), end_cap = circle(3, 'mm')) +
+  geom_node_point(size = 5, color = "#FF6F61") +
+  geom_node_text(aes(label=name), repel=TRUE, size=3) +
+  labs(title="Réseau Responsable → Bénéficiaire") +
+  theme_void()
+
+##################################
+##################################
+
+#Graphiques interactives
+
+#Plots interactifs → plotly
+
+#Cartes → leaflet
+
+#Filtrage dynamique → Shiny
+
+#Données déjà clean → tu es nickel avec tes .rds
+
+install.packages("plotly")
+library(plotly)
+
+#🔹 A. Histogramme interactif des montants
+p_hist <- ggplot(corrupcion, aes(x = monto)) +
+  geom_histogram(bins = 30, fill = "#E45756") +
+  scale_x_log10(labels = scales::comma) +
+  labs(
+    title = "Distribution des montants de corruption",
+    x = "Montant (log)",
+    y = "Nombre de cas"
+  ) +
+  theme_minimal()
+
+ggplotly(p_hist, tooltip = c("x", "y"))
+
+
+#🔹 B. Évolution temporelle (cas par année)
+p_time <- corrupcion %>%
+  count(año) %>%
+  ggplot(aes(x = año, y = n)) +
+  geom_line(color = "#4C78A8", linewidth = 1.2) +
+  geom_point(size = 2) +
+  labs(
+    title = "Nombre d’affaires de corruption par année",
+    x = "Année",
+    y = "Nombre de cas"
+  ) +
+  theme_minimal()
+
+ggplotly(p_time, tooltip = c("x", "y"))
+
+
+#🔹 C. Top communes (barres interactives)
+top_comunas <- corrupcion %>%
+  group_by(comuna) %>%
+  summarise(total_monto = sum(monto, na.rm = TRUE)) %>%
+  arrange(desc(total_monto)) %>%
+  slice(1:15)
+
+p_comuna <- ggplot(
+  top_comunas,
+  aes(
+    x = reorder(comuna, total_monto),
+    y = total_monto,
+    text = paste0(
+      "Commune: ", comuna,
+      "<br>Montant: ", scales::comma(total_monto)
+    )
+  )
+) +
+  geom_col(fill = "#F58518") +
+  coord_flip() +
+  labs(
+    title = "Communes les plus touchées par la corruption",
+    x = "",
+    y = "Montant total"
+  ) +
+  theme_minimal()
+
+ggplotly(p_comuna, tooltip = "text")
+
+# 3. Cartographie interactive avec leaflet$
+install.packages(c("leaflet", "sf", "rnaturalearth"))
+library(leaflet)
+library(sf)
+install.packages("rnaturalearth")
+library(rnaturalearth)
+
+chile <- ne_states(country = "Chile", returnclass = "sf")
+
+#🔹 B. Agrégation par commune
+corrupcion_map <- corrupcion %>%
+  group_by(comuna) %>%
+  summarise(
+    total_monto = sum(monto, na.rm = TRUE),
+    n_casos = n()
+  )
+
+map_data <- comunas_sf %>%
+  left_join(corrupcion_map, by = "comuna")
+
+
+#🔹 C. Carte interactive
+pal <- colorNumeric(
+  palette = "Reds",
+  domain = map_data$total_monto
+)
+
+leaflet(map_data) %>%
+  addTiles() %>%
+  addPolygons(
+    fillColor = ~pal(total_monto),
+    fillOpacity = 0.7,
+    color = "white",
+    weight = 1,
+    popup = ~paste0(
+      "<strong>", comuna, "</strong><br>",
+      "Cas: ", n_casos, "<br>",
+      "Montant: ", scales::comma(total_monto)
+    )
+  ) %>%
+  addLegend(
+    pal = pal,
+    values = ~total_monto,
+    title = "Montant total",
+    position = "bottomright"
+  )
+
+#⚡ 4. Et maintenant… Shiny 👀
+output$hist_monto <- renderPlotly({
+  ggplotly(p_hist)
+})
+
